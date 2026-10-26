@@ -1,0 +1,3 @@
+# Installed by the Colab launcher. ComfyUI installs its own requirements.
+flask>=2.3
+requests>=2.31
