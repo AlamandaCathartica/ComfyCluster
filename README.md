@@ -1,6 +1,8 @@
 # ComfyCluster
-
+For Controller Instances:
 [![Open the controller in Colab](assets/colab-badge.svg)](https://colab.research.google.com/github/AlamandaCathartica/ComfyCluster/blob/main/Controller.ipynb)
+For Worker Instances:
+[![Open the worker in Colab](assets/colab-badge.svg)](https://colab.research.google.com/github/AlamandaCathartica/ComfyCluster/blob/main/Worker.ipynb)
 
 Run **ComfyUI** on several Google Colab accounts at once. One **controller** gives you the full ComfyUI interface in a single clean page. Four **workers** only render. Together they make five GPUs that share your generations.
 
