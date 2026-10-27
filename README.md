@@ -1,6 +1,8 @@
 # ComfyCluster
-
+For Controller Instances:
 [![Open the controller in Colab](assets/colab-badge.svg)](https://colab.research.google.com/github/AlamandaCathartica/ComfyCluster/blob/main/Controller.ipynb)
+For Worker Instances:
+[![Open the worker in Colab](assets/colab-badge.svg)](https://colab.research.google.com/github/AlamandaCathartica/ComfyCluster/blob/main/Worker.ipynb)
 
 Run **ComfyUI** on several Google Colab accounts at once. One **controller** gives you the full ComfyUI interface in a single clean page. Four **workers** only render. Together they make five GPUs that share your generations.
 
@@ -15,6 +17,7 @@ Run **ComfyUI** on several Google Colab accounts at once. One **controller** giv
 - **Upload.** The **Upload** button next to Workers sends models (into the chosen `models/` folder) or custom nodes (`.zip` or `.py`) to the controller. Large files go up in 32 MB slices, so they pass through the tunnel and a dropped connection resumes. Press **R** in ComfyUI to see a new model; restart ComfyUI to load a new custom node.
 - **Delete a worker.** A worker that is disconnected or offline gets a **Delete** button next to Connect. It asks for a second click, then removes the worker from the monitor, from ComfyUI-Distributed's config and from the saved list. A connected, online worker cannot be deleted: disconnect it first. To bring it back later, paste its pairing code again.
 - **Add workers in the page.** Each worker prints a short pairing code. Open the **Workers** window, paste the code (or several, one per line or separated by spaces) into **Add a worker** and press **Add worker**. The controller checks that the worker answers, registers it with [ComfyUI-Distributed](https://github.com/robertvoy/ComfyUI-Distributed) and remembers it if the controller restarts. Pasting the new code of a restarted worker replaces its old address.
+- **Node assignment.** The **Assign** button opens a window where you decide which machine runs which node. Add a rule per node type (for example `FaceDetailer`), pick the machine to **Run on**, and optionally where its **Image input from**. Example: FaceDetailer on `worker2` with its image from `worker1` makes worker1 render the image, worker2 refine the faces, and the controller save the result. Open the **Run a workflow** tab, paste a workflow exported with **Workflow > Export (API)**, press **Preview plan** to see the steps, then **Run**. Rules are saved on the controller.
 - **Different accounts are fine.** Nothing is shared through Google Drive, so every tab can use its own account.
 - **No uploads.** The notebooks download the code from this repository each time they run, and the GUI link is protected by a private key.
 
@@ -30,6 +33,16 @@ Distributed generation runs whole images in parallel: the same workflow goes to 
 4. Build your workflow, add the Distributed nodes (for example Distributed Seed and Distributed Collector) and queue.
 
 Keep every notebook cell running. If a worker restarts it gets a new address: paste its new code in the Workers window. If you run the controller cell again, workers that still answer are kept.
+
+## Node assignment: how it works and its limits
+
+The controller splits your workflow into steps, one slice per machine, and runs them in order through each machine's ComfyUI API. Between steps it copies the image from one machine to the next (`/view` then `/upload/image`), so a step starts when the one before it has finished. Steps that do not depend on each other run side by side.
+
+- **Only images move between machines.** A LATENT, MODEL or CONDITIONING cannot. The plan tells you which two nodes to put on the same machine.
+- **Light nodes are copied, not moved.** Loaders, prompt encoders and detector providers are loaded on every machine that needs them.
+- **Every machine needs the same custom nodes and models** for the nodes it runs (FaceDetailer needs the Impact Pack and its detector model on that worker). The plan warns when a node type is missing on a machine.
+- **The Run tab runs the exported workflow itself**, not the graph open in the ComfyUI frame, because the page cannot read another site's graph. Results appear in the window.
+- A worker must be connected and online to receive nodes.
 
 ## Models
 
@@ -67,6 +80,7 @@ Then open `http://127.0.0.1:7860`. With a ComfyUI already running on this machin
 | `engine/comfy.py` | Installs and launches ComfyUI and ComfyUI-Distributed, downloads models |
 | `engine/comfycluster_stats.py` | ComfyUI add-on that serves CPU, RAM, disk and GPU load to the monitor |
 | `engine/logtail.py` | Reads the end of a log file (used by the GUI and the worker add-on) |
+| `engine/pipeline.py` | Splits a workflow across machines by node type and runs the steps (node assignment) |
 | `engine/pairing.py` | Makes and reads pairing codes |
 | `gui/comfycluster_gui.py` | The GUI server (worker monitor, adding workers by code, logs, uploads) |
 | `gui/web/index.html` | The web page |

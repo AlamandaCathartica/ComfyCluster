@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(ROOT, "engine"))
 from logtail import tail_log  # noqa: E402
 from pairing import PREFIX, parse_code  # noqa: E402
 from comfy import worker_entry  # noqa: E402
+import pipeline  # noqa: E402
 WEB = os.path.join(HERE, "web")
 GIB = 1024 ** 3
 ACCESS_KEY = os.environ.get("COMFYCLUSTER_KEY", "")
@@ -36,7 +37,8 @@ except OSError:
     VERSION = "dev"
 
 STATE = {"demo": False, "comfy_url": "", "comfy_local": "", "comfy_ready": False,
-         "workers": [], "workers_file": "", "config_path": "", "comfy_dir": "", "stage_dir": "", "logs": {}}
+         "workers": [], "workers_file": "", "config_path": "", "comfy_dir": "", "stage_dir": "", "logs": {},
+         "assign_file": "", "rules": []}
 _LOCK = threading.Lock()
 _CFG_LOCK = threading.Lock()
 WAKE = threading.Event()          # set to refresh the worker status right away
@@ -355,6 +357,179 @@ def upload_chunk():
 
 
 
+# ----------------------------------------------------------------------------- node assignment
+# Rules say which machine runs which node type. A workflow (API format) is split by them and run step by step.
+JOBS = {}
+MAX_RULES = 50
+_T = lambda out, node=False: {"output": out, "output_node": node}          # noqa: E731
+DEMO_INFO = {                          # demo mode only: enough node types for the example workflow
+    "CheckpointLoaderSimple": _T(["MODEL", "CLIP", "VAE"]), "CLIPTextEncode": _T(["CONDITIONING"]),
+    "EmptyLatentImage": _T(["LATENT"]), "KSampler": _T(["LATENT"]), "VAEDecode": _T(["IMAGE"]),
+    "UltralyticsDetectorProvider": _T(["BBOX_DETECTOR", "SEGM_DETECTOR"]),
+    "FaceDetailer": _T(["IMAGE", "IMAGE", "MASK", "DETAILER_PIPE", "IMAGE"]), "LoadImage": _T(["IMAGE", "MASK"]),
+    "ImageScale": _T(["IMAGE"]), "SaveImage": _T([], True), "PreviewImage": _T([], True),
+}
+_NODES = {"t": 0.0, "types": []}
+
+
+def _machine_bases():
+    """Machines a plan may use right now: the controller and every connected, online worker."""
+    with _LOCK:
+        ws = [dict(w) for w in STATE["workers"]]
+    out = {pipeline.CTL: STATE["comfy_local"]}
+    for w in ws:
+        if w.get("enabled") and w.get("online"):
+            out[w["name"]] = w["url"]
+    return out
+
+
+def _clean_rules(raw):
+    names = {pipeline.CTL} | {w["name"] for w in STATE["workers"]}
+    out = []
+    for r in (raw if isinstance(raw, list) else [])[:MAX_RULES]:
+        if not isinstance(r, dict):
+            continue
+        t, w, src = str(r.get("node_type", "")).strip()[:120], str(r.get("worker", "")), str(r.get("source") or "auto")
+        if not t or w not in names:
+            continue
+        out.append(dict(node_type=t, worker=w, source=src if src in names else "auto", enabled=bool(r.get("enabled", True))))
+    return out
+
+
+def _load_rules():
+    path = STATE["assign_file"]
+    if path and os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                STATE["rules"] = _clean_rules(json.load(f))
+        except (OSError, ValueError):
+            STATE["rules"] = []
+
+
+def _save_rules():
+    path = STATE["assign_file"]
+    if not path:
+        return
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".part"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(STATE["rules"], f)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+@app.get("/api/assign/rules")
+def assign_rules():
+    with _LOCK:
+        names = [pipeline.CTL] + [w["name"] for w in STATE["workers"]]
+    return jsonify(rules=STATE["rules"], machines=names, demo=STATE["demo"])
+
+
+@app.put("/api/assign/rules")
+def assign_save_rules():
+    body = request.get_json(silent=True) or {}
+    STATE["rules"] = _clean_rules(body.get("rules"))
+    _save_rules()
+    return jsonify(ok=True, rules=STATE["rules"])
+
+
+@app.get("/api/assign/nodes")
+def assign_nodes():
+    """Node types the controller knows, for the autocomplete in the rule editor."""
+    if STATE["demo"]:
+        return jsonify(types=sorted(DEMO_INFO))
+    if time.time() - _NODES["t"] > 300 and STATE["comfy_local"]:
+        try:
+            r = requests.get(STATE["comfy_local"].rstrip("/") + "/object_info", timeout=30)
+            _NODES.update(t=time.time(), types=sorted(r.json().keys()) if r.ok else [])
+        except (requests.RequestException, ValueError):
+            pass
+    return jsonify(types=_NODES["types"])
+
+
+def _make_plan(body):
+    wf = body.get("workflow")
+    if isinstance(wf, str):
+        try:
+            wf = json.loads(wf)
+        except ValueError:
+            raise pipeline.PlanError("The workflow is not valid JSON.") from None
+    rules = _clean_rules(body.get("rules", STATE["rules"]))
+    bases = _machine_bases()
+    if STATE["demo"]:
+        plan = pipeline.build_plan(wf, rules, list(bases), DEMO_INFO.get)
+        plan["warnings"] = []
+        return plan, None
+    if not STATE["comfy_ready"]:
+        raise pipeline.PlanError("ComfyUI on the controller is not ready yet.")
+    cluster = pipeline.Cluster(bases)
+    plan = pipeline.build_plan(wf, rules, list(bases), cluster.info_any)
+    return cluster.missing(plan), cluster
+
+
+@app.post("/api/assign/plan")
+def assign_plan():
+    try:
+        plan, _ = _make_plan(request.get_json(silent=True) or {})
+    except pipeline.PlanError as e:
+        return jsonify(ok=False, error=str(e)), 400
+    return jsonify(ok=True, plan=pipeline.public_plan(plan))
+
+
+def _demo_execute(job, plan):
+    """Demo mode: no ComfyUI behind it, so the steps are only pretended."""
+    try:
+        for i, st in enumerate(plan["stages"]):
+            job["stages"][i].update(state="running", msg="Running\u2026")
+            time.sleep(1.4)
+            job["stages"][i].update(state="done" if st["runs"] else "skipped", msg="Done" if st["runs"] else "Nothing to run here")
+        job["state"] = "done"
+    except Exception as e:  # noqa: BLE001
+        job.update(state="error", error=str(e))
+
+
+@app.post("/api/assign/run")
+def assign_run():
+    try:
+        plan, cluster = _make_plan(request.get_json(silent=True) or {})
+    except pipeline.PlanError as e:
+        return jsonify(ok=False, error=str(e)), 400
+    if plan.get("warnings"):
+        return jsonify(ok=False, error=plan["warnings"][0]), 400
+    job = pipeline.new_job(plan)
+    for old in sorted(JOBS.values(), key=lambda j: j["t0"])[:-19]:
+        JOBS.pop(old["id"], None)
+    JOBS[job["id"]] = job
+    target = (lambda: _demo_execute(job, plan)) if STATE["demo"] else (lambda: pipeline.execute(cluster, plan, job))
+    threading.Thread(target=target, daemon=True).start()
+    return jsonify(ok=True, job=job["id"])
+
+
+@app.get("/api/assign/job/<jid>")
+def assign_job(jid):
+    job = JOBS.get(jid)
+    return jsonify(job) if job else (jsonify(error="unknown job"), 404)
+
+
+@app.get("/api/assign/view/<machine>")
+def assign_view(machine):
+    """Show an image a run produced (the page cannot reach the workers itself)."""
+    base = _machine_bases().get(machine)
+    typ, name, sub = request.args.get("type", ""), request.args.get("filename", ""), request.args.get("subfolder", "")
+    if not base or STATE["demo"] or typ not in ("output", "temp", "input") or name != _safe_name(name) \
+            or ".." in sub or not re.fullmatch(r"[\w .\-/]*", sub):
+        return jsonify(error="not available"), 404
+    try:
+        r = requests.get(base.rstrip("/") + "/view", params=dict(filename=name, subfolder=sub, type=typ), timeout=30)
+    except requests.RequestException:
+        return jsonify(error="could not reach the machine"), 502
+    if not r.ok:
+        return jsonify(error="image not found"), 404
+    return Response(r.content, mimetype=r.headers.get("Content-Type", "image/png"))
+
+
 # ----------------------------------------------------------------------------- ComfyUI-Distributed config
 def _save_enabled(names, enabled):
     """Mirror the switch into ComfyUI-Distributed's gpu_config.json so the extension skips the worker."""
@@ -578,6 +753,9 @@ def main():
     for w in STATE["workers"]:
         w.update(enabled=True, online=False, gpu="", vram_used=0, vram_total=0, running=0, pending=0)
     _load_enabled()
+    STATE["assign_file"] = os.path.join(os.path.dirname(os.path.abspath(args.workers_file)) if args.workers_file else args.cache_dir,
+                                       "comfycluster_assign.json")
+    _load_rules()
     threading.Thread(target=poller, daemon=True).start()
 
     if args.tunnel:

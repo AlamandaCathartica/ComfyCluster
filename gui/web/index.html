@@ -308,6 +308,74 @@
   .lempty{padding:24px 8px;text-align:center;font:400 14px/20px var(--font);color:var(--on-surface-variant);}
   .win.big.logwin .win-foot{padding:14px 32px 24px;}
 
+  /* node assignment window */
+  .win.big.asgwin{width:min(1000px,calc(100% - 48px));background:var(--frame);}
+  .win.big.asgwin .win-bar{padding:22px 16px 8px 32px;}
+  .win.big.asgwin .win-title strong{font:400 28px/36px var(--font);}
+  .asg-tabs{padding:4px 32px 10px;}
+  .win.big.asgwin .win-body{display:flex;flex-direction:column;gap:14px;padding:4px 32px 12px;}
+  .apanel{display:flex;flex-direction:column;gap:14px;min-width:0;}
+  .ahint{margin:0;font:400 13px/20px var(--font);letter-spacing:.2px;color:var(--on-surface-variant);}
+  .ahint b{font-weight:500;color:var(--on-surface);}
+  .arow{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 40px;gap:10px;align-items:end;
+        background:var(--frame-high);border-radius:20px;padding:14px 12px 14px 16px;}
+  .field input{
+    height:40px;padding:0 12px;border:0;border-radius:12px;background:var(--frame);color:var(--on-surface);min-width:0;
+    box-shadow:inset 0 0 0 1px var(--outline-variant);font:400 14px/20px var(--font);
+  }
+  .field input:focus-visible{outline:2px solid var(--primary);outline-offset:2px;}
+  .arow .iconbtn{margin-bottom:0;}
+  .abar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
+  .abar .grow{flex:1;}
+  .amsg{font:400 13px/18px var(--font);letter-spacing:.2px;color:var(--on-surface-variant);}
+  .amsg.bad{color:var(--bad);} .amsg.ok{color:var(--ok);}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .chip{
+    height:32px;padding:0 12px;border:0;border-radius:8px;cursor:pointer;background:var(--secondary-container);color:var(--on-surface);
+    font:500 13px/20px var(--font);letter-spacing:.1px;box-shadow:inset 0 0 0 1px transparent;
+  }
+  .chip:hover{filter:brightness(1.07);}
+  .chip.used{background:var(--primary-container);color:var(--on-primary-container);}
+  .chip:focus-visible{outline:2px solid var(--primary);outline-offset:2px;}
+  .awf{
+    display:block;width:100%;min-height:150px;max-height:260px;padding:12px 14px;border:0;border-radius:16px;resize:vertical;
+    background:var(--frame-high);color:var(--on-surface);box-shadow:inset 0 0 0 1px var(--outline-variant);
+    font:400 12px/18px ui-monospace,"JetBrains Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  .awf:focus-visible{outline:2px solid var(--primary);outline-offset:2px;}
+  .stage{background:var(--frame-high);border-radius:20px;padding:14px 18px;display:flex;flex-direction:column;gap:10px;}
+  .stop{display:flex;align-items:center;gap:10px;}
+  .stop .sno{
+    width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none;
+    background:var(--primary-container);color:var(--on-primary-container);font:500 12px/16px var(--font);
+  }
+  .stop .wname{flex:none;}
+  .stop .wstate{flex:1;}
+  .dot.run{background:var(--primary);animation:pulse 1s ease-in-out infinite;}
+  @keyframes pulse{50%{opacity:.35;}}
+  .stage .tags{display:flex;flex-wrap:wrap;gap:6px;}
+  .tag{height:24px;padding:0 10px;border-radius:12px;display:inline-flex;align-items:center;background:var(--secondary-container);
+       color:var(--on-surface);font:500 12px/16px var(--font);letter-spacing:.2px;}
+  .tag.main{background:var(--primary);color:var(--on-primary);}
+  .tag small{font-weight:400;opacity:.7;margin-left:4px;}
+  .sline{font:400 13px/18px var(--font);letter-spacing:.2px;color:var(--on-surface-variant);}
+  .sline b{font-weight:500;color:var(--on-surface);}
+  .sline.bad{color:var(--bad);}
+  .alist{display:flex;flex-direction:column;gap:3px;font:400 13px/18px var(--font);letter-spacing:.2px;}
+  .alist .bad{color:var(--bad);} .alist .warn{color:var(--warn);} .alist .note{color:var(--on-surface-variant);}
+  .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+  .results a{display:block;border-radius:14px;overflow:hidden;background:var(--frame-high);box-shadow:inset 0 0 0 1px var(--outline-variant);}
+  .results img{display:block;width:100%;height:150px;object-fit:cover;}
+  .results span{display:block;padding:6px 10px;font:400 11px/16px var(--font);color:var(--on-surface-variant);}
+  @media (max-width:600px){
+    .win.big.asgwin{width:calc(100% - 24px);}
+    .win.big.asgwin .win-body{padding:4px 14px 10px;}
+    .asg-tabs{padding:2px 16px 8px;}
+    .arow{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}
+    .arow .field:first-child{grid-column:1 / -1;}
+    .arow .iconbtn{justify-self:end;}
+  }
+
   /* add a worker by pairing code */
   .padd{display:flex;align-items:flex-end;gap:12px;padding:4px 32px 12px;}
   .padd .field{flex:1;min-width:0;}
@@ -365,6 +433,10 @@
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>
         <span class="pill-label">Workers</span>
         <span class="count" id="wcount">&ndash;</span>
+      </button>
+      <button class="pill" id="abtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="awin">
+        <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.5 6h7M6 8.5v3a3 3 0 0 0 3 3h6.5"/></svg>
+        <span class="pill-label">Assign</span>
       </button>
       <button class="pill" id="ubtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="uwin">
         <svg viewBox="0 0 24 24"><path d="M12 16V4M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
@@ -468,6 +540,57 @@
     </div>
   </section>
 
+  <div class="scrim" id="ascrim" hidden></div>
+  <section class="win big asgwin" id="awin" role="dialog" aria-label="Node assignment" hidden>
+    <div class="win-bar">
+      <div class="win-title"><strong>Node assignment</strong><span>Choose which machine runs which node</span></div>
+      <button class="iconbtn" id="aclose" type="button" aria-label="Close node assignment">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="asg-tabs">
+      <div class="seg" role="tablist" aria-label="Assignment steps">
+        <button type="button" role="tab" id="atab-rules" aria-selected="true">1 &middot; Rules</button>
+        <button type="button" role="tab" id="atab-run" aria-selected="false">2 &middot; Run a workflow</button>
+      </div>
+    </div>
+    <div class="win-body">
+      <div class="apanel" id="apanel-rules">
+        <p class="ahint">Each rule sends one kind of node to one machine. <b>Image input from</b> also moves the nodes that make the image
+          to that machine. Example: <b>FaceDetailer</b> runs on <b>worker2</b>, image input from <b>worker1</b>.</p>
+        <div class="apanel" id="arules"></div>
+        <div class="chips" id="achips" hidden></div>
+        <div class="abar">
+          <button class="btn tonal" id="aadd" type="button">Add rule</button>
+          <button class="btn go" id="asave" type="button">Save rules</button>
+          <span class="amsg" id="asavemsg" role="status"></span>
+        </div>
+        <datalist id="atypes"></datalist>
+      </div>
+      <div class="apanel" id="apanel-run" hidden>
+        <p class="ahint">In ComfyUI choose <b>Workflow &rsaquo; Export (API)</b>, then paste the file here or load it. Every machine must have the
+          models and custom nodes its nodes need. Only images travel between machines.</p>
+        <textarea class="awf" id="awf" spellcheck="false" placeholder='{"1": {"class_type": "CheckpointLoaderSimple", "inputs": {...}}, ...}'></textarea>
+        <input type="file" id="awffile" accept=".json,application/json" hidden />
+        <div class="abar">
+          <button class="btn" id="awfload" type="button">Load file</button>
+          <button class="btn" id="awfex" type="button">Example</button>
+          <span class="grow"></span>
+          <button class="btn tonal" id="aplanbtn" type="button">Preview plan</button>
+          <button class="btn go" id="arunbtn" type="button">Run</button>
+        </div>
+        <div class="amsg" id="arunmsg" role="status" aria-live="polite"></div>
+        <div class="alist" id="anotes"></div>
+        <div class="apanel" id="aplan"></div>
+        <div class="results" id="aresults"></div>
+      </div>
+    </div>
+    <div class="win-foot">
+      <span class="grow"></span>
+      <button class="btn tonal" id="adone" type="button">Close</button>
+    </div>
+  </section>
+
   <section class="win" id="uwin" role="dialog" aria-label="Upload models and custom nodes" hidden>
     <div class="win-bar">
       <div class="win-title"><strong>Upload</strong><span id="usub">Models and custom nodes</span></div>
@@ -550,7 +673,7 @@
     wwin.hidden = !open;
     document.getElementById("wscrim").hidden = !open;
     wbtn.setAttribute("aria-expanded", String(open));
-    if (open) { renderWorkers(); pfit(); setUpOpen(false, true); setLogOpen(false, true); if (!workers.length) pcode.focus(); }
+    if (open) { renderWorkers(); pfit(); setUpOpen(false, true); setLogOpen(false, true); setAsgOpen(false, true); if (!workers.length) pcode.focus(); }
     else { pmsg.textContent = ""; if (!quiet) wbtn.focus(); }
   }
   wbtn.onclick = function () { setOpen(wwin.hidden); };
@@ -562,6 +685,7 @@
     if (!wwin.hidden) setOpen(false);
     else if (!uwin.hidden) setUpOpen(false);
     else if (!lwin.hidden) setLogOpen(false);
+    else if (!awin.hidden) setAsgOpen(false);
   });
 
   function stateOf(w) {
@@ -730,7 +854,7 @@
   function setUpOpen(open, quiet) {
     uwin.hidden = !open;
     ubtn.setAttribute("aria-expanded", String(open));
-    if (open) { setOpen(false, true); setLogOpen(false, true); renderQueue(); } else if (!quiet) ubtn.focus();
+    if (open) { setOpen(false, true); setLogOpen(false, true); setAsgOpen(false, true); renderQueue(); } else if (!quiet) ubtn.focus();
   }
   ubtn.onclick = function () { setUpOpen(uwin.hidden); };
   document.getElementById("uclose").onclick = function () { setUpOpen(false); };
@@ -863,7 +987,7 @@
   function setLogOpen(open, quiet) {
     lwin.hidden = !open; lscrim.hidden = !open;
     lbtn.setAttribute("aria-expanded", String(open));
-    if (open) { setOpen(false, true); setUpOpen(false, true); buildSources(); resetView(); pollLog(); }
+    if (open) { setOpen(false, true); setUpOpen(false, true); setAsgOpen(false, true); buildSources(); resetView(); pollLog(); }
     else { lgen++; clearTimeout(ltimer); if (!quiet) lbtn.focus(); }
   }
   lbtn.onclick = function () { setLogOpen(lwin.hidden); };
@@ -939,6 +1063,246 @@
     lmark[logKey()] = lsize[logKey()] || 0;
     resetView("Nothing to show."); pollLog();
   };
+
+  // ---- node assignment window -------------------------------------------------
+  var abtn = document.getElementById("abtn"), awin = document.getElementById("awin"), ascrim = document.getElementById("ascrim"),
+      arulesBox = document.getElementById("arules"), achips = document.getElementById("achips"), awf = document.getElementById("awf"),
+      arules = [], aloaded = false, adirty = false, aplanned = false, ajob = null, atimer = null, abusy = false;
+
+  function setAsgOpen(open, quiet) {
+    awin.hidden = !open; ascrim.hidden = !open;
+    abtn.setAttribute("aria-expanded", String(open));
+    if (open) { setOpen(false, true); setUpOpen(false, true); setLogOpen(false, true); loadAssign(); renderRules(); }
+    else if (!quiet) abtn.focus();
+  }
+  abtn.onclick = function () { setAsgOpen(awin.hidden); };
+  document.getElementById("aclose").onclick = function () { setAsgOpen(false); };
+  document.getElementById("adone").onclick = function () { setAsgOpen(false); };
+  ascrim.onclick = function () { setAsgOpen(false); };
+
+  function api(method, url, body) {
+    return fetch(url, { method: method, cache: "no-store", headers: { "Content-Type": "application/json" },
+                        body: body ? JSON.stringify(body) : undefined })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); });
+  }
+  function say(id, text, cls) { var m = document.getElementById(id); m.textContent = text || ""; m.className = "amsg" + (cls ? " " + cls : ""); }
+
+  function showTab(t) {
+    var rules = t === "rules";
+    document.getElementById("atab-rules").setAttribute("aria-selected", String(rules));
+    document.getElementById("atab-run").setAttribute("aria-selected", String(!rules));
+    document.getElementById("apanel-rules").hidden = !rules;
+    document.getElementById("apanel-run").hidden = rules;
+    if (rules) renderChips();
+  }
+  document.getElementById("atab-rules").onclick = function () { showTab("rules"); };
+  document.getElementById("atab-run").onclick = function () { showTab("run"); };
+
+  function machineLabel(n) {
+    if (n === "controller") return "Controller";
+    var w = workers.filter(function (x) { return x.name === n; })[0];
+    return n + (w && (!w.enabled || !w.online) ? " (offline)" : "");
+  }
+  function machineNames() { return ["controller"].concat(workers.map(function (w) { return w.name; })); }
+
+  function mkSelect(value, withAuto, onchange) {
+    var s = document.createElement("select"), names = machineNames();
+    if (withAuto) { var a = el("option", null, "Automatic"); a.value = "auto"; s.appendChild(a); }
+    names.forEach(function (n) { var o = el("option", null, machineLabel(n)); o.value = n; s.appendChild(o); });
+    if (value && value !== "auto" && names.indexOf(value) < 0) { var g = el("option", null, value + " (removed)"); g.value = value; s.appendChild(g); }
+    s.value = value || (withAuto ? "auto" : "controller");
+    s.onchange = function () { onchange(s.value); };
+    return s;
+  }
+  function field(label, input) { var f = el("label", "field"); f.appendChild(el("span", null, label)); f.appendChild(input); return f; }
+  function dirty() { adirty = true; aplanned = false; say("asavemsg", "Not saved yet"); }
+
+  function renderRules() {
+    if (awin.hidden) return;
+    arulesBox.textContent = "";
+    if (!arules.length) arulesBox.appendChild(el("div", "win-empty", "No rules yet. Everything runs on the controller. Add a rule to send a node type to a worker."));
+    arules.forEach(function (r) {
+      var row = el("div", "arow");
+      var t = el("input"); t.type = "text"; t.value = r.node_type; t.placeholder = "e.g. FaceDetailer"; t.setAttribute("list", "atypes");
+      t.spellcheck = false; t.autocomplete = "off"; t.oninput = function () { r.node_type = t.value; dirty(); };
+      row.appendChild(field("Node type", t));
+      row.appendChild(field("Run on", mkSelect(r.worker, false, function (v) { r.worker = v; dirty(); })));
+      row.appendChild(field("Image input from", mkSelect(r.source, true, function (v) { r.source = v; dirty(); })));
+      var x = el("button", "iconbtn"); x.type = "button"; x.setAttribute("aria-label", "Remove rule");
+      x.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+      x.onclick = function () { arules.splice(arules.indexOf(r), 1); dirty(); renderRules(); renderChips(); };
+      row.appendChild(x);
+      arulesBox.appendChild(row);
+    });
+    renderChips();
+  }
+
+  function addRule(type) {
+    var first = workers.filter(function (w) { return w.enabled && w.online; })[0];
+    arules.push({ node_type: type || "", worker: first ? first.name : "controller", source: "auto", enabled: true });
+    dirty(); renderRules();
+  }
+  document.getElementById("aadd").onclick = function () { addRule(""); };
+
+  function workflowTypes() {                         // node types found in the pasted workflow, with how many of each
+    var counts = {};
+    try {
+      var wf = JSON.parse(awf.value);
+      Object.keys(wf).forEach(function (k) { var c = wf[k] && wf[k].class_type; if (c) counts[c] = (counts[c] || 0) + 1; });
+    } catch (e) { return null; }
+    return counts;
+  }
+  function renderChips() {
+    var counts = workflowTypes(), names = counts ? Object.keys(counts).sort() : [];
+    achips.hidden = !names.length; achips.textContent = "";
+    if (!names.length) return;
+    achips.appendChild(el("span", "amsg", "In your workflow:"));
+    names.forEach(function (n) {
+      var used = arules.some(function (r) { return r.node_type.toLowerCase() === n.toLowerCase(); });
+      var c = el("button", "chip" + (used ? " used" : ""), n + (counts[n] > 1 ? " \u00D7" + counts[n] : ""));
+      c.type = "button"; c.title = used ? "Already has a rule" : "Add a rule for " + n;
+      c.onclick = function () { if (!used) addRule(n); };
+      achips.appendChild(c);
+    });
+  }
+
+  function loadAssign() {
+    if (aloaded) return;
+    api("GET", "api/assign/rules").then(function (x) { if (x.ok) { arules = x.d.rules || []; aloaded = true; renderRules(); } });
+    api("GET", "api/assign/nodes").then(function (x) {
+      var dl = document.getElementById("atypes"); dl.textContent = "";
+      (x.d.types || []).forEach(function (t) { var o = document.createElement("option"); o.value = t; dl.appendChild(o); });
+    });
+  }
+
+  document.getElementById("asave").onclick = function () {
+    api("PUT", "api/assign/rules", { rules: arules }).then(function (x) {
+      if (x.ok) { arules = x.d.rules; adirty = false; say("asavemsg", "Saved", "ok"); renderRules(); }
+      else say("asavemsg", "Could not save.", "bad");
+    }).catch(function () { say("asavemsg", "Could not reach the controller.", "bad"); });
+  };
+
+  // ---- workflow, plan and run
+  var EXAMPLE = {
+    "1": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "v1-5-pruned-emaonly.safetensors" } },
+    "2": { class_type: "CLIPTextEncode", inputs: { text: "portrait photo of a woman, detailed face", clip: ["1", 1] } },
+    "3": { class_type: "CLIPTextEncode", inputs: { text: "blurry, lowres", clip: ["1", 1] } },
+    "4": { class_type: "EmptyLatentImage", inputs: { width: 512, height: 768, batch_size: 1 } },
+    "5": { class_type: "KSampler", inputs: { seed: 1, steps: 20, cfg: 7, sampler_name: "euler", scheduler: "normal", denoise: 1,
+           model: ["1", 0], positive: ["2", 0], negative: ["3", 0], latent_image: ["4", 0] } },
+    "6": { class_type: "VAEDecode", inputs: { samples: ["5", 0], vae: ["1", 2] } },
+    "7": { class_type: "UltralyticsDetectorProvider", inputs: { model_name: "bbox/face_yolov8m.pt" } },
+    "8": { class_type: "FaceDetailer", inputs: { image: ["6", 0], model: ["1", 0], clip: ["1", 1], vae: ["1", 2], positive: ["2", 0], negative: ["3", 0],
+           bbox_detector: ["7", 0], guide_size: 384, guide_size_for: true, max_size: 1024, seed: 1, steps: 20, cfg: 7, sampler_name: "euler",
+           scheduler: "normal", denoise: 0.4, feather: 5, noise_mask: true, force_inpaint: true, bbox_threshold: 0.5, bbox_dilation: 10,
+           bbox_crop_factor: 3, sam_detection_hint: "center-1", sam_dilation: 0, sam_threshold: 0.93, sam_bbox_expansion: 0,
+           sam_mask_hint_threshold: 0.7, sam_mask_hint_use_negative: "False", drop_size: 10, wildcard: "", cycle: 1 } },
+    "9": { class_type: "SaveImage", inputs: { images: ["8", 0], filename_prefix: "cluster" } }
+  };
+  document.getElementById("awfex").onclick = function () {
+    awf.value = JSON.stringify(EXAMPLE, null, 1);
+    var real = workers.filter(function (w) { return w.enabled && w.online; });
+    if (!arules.length && real.length) {            // the rule from the request: FaceDetailer on one worker, image from another
+      arules.push({ node_type: "FaceDetailer", worker: (real[1] || real[0]).name, source: real.length > 1 ? real[0].name : "auto", enabled: true });
+      dirty(); renderRules();
+    }
+    say("arunmsg", "Example loaded. Press Preview plan."); renderChips();
+  };
+  document.getElementById("awfload").onclick = function () { document.getElementById("awffile").click(); };
+  document.getElementById("awffile").onchange = function (e) {
+    var f = e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function () { awf.value = String(rd.result); renderChips(); say("arunmsg", f.name + " loaded."); };
+    rd.readAsText(f);
+  };
+  awf.addEventListener("input", function () { aplanned = false; renderChips(); });
+
+  function nodeTag(n, main) { var t = el("span", "tag" + (main ? " main" : ""), n.cls); t.appendChild(el("small", null, "#" + n.id)); return t; }
+  var STATE_TEXT = { queued: "Waiting", running: "Running", done: "Done", skipped: "Skipped", error: "Failed" };
+
+  function renderPlan(plan, job) {
+    var box = document.getElementById("aplan"), notes = document.getElementById("anotes");
+    box.textContent = ""; notes.textContent = "";
+    (plan.warnings || []).forEach(function (t) { notes.appendChild(el("div", "bad", t)); });
+    (plan.notes || []).forEach(function (t) { notes.appendChild(el("div", "note", t)); });
+    plan.stages.forEach(function (st, i) {
+      var js = job && job.stages[i], card = el("div", "stage"), top = el("div", "stop");
+      top.appendChild(el("span", "sno", String(i + 1)));
+      var run = js && js.state === "running";
+      top.appendChild(el("span", "dot " + (js ? (js.state === "done" ? "ok" : js.state === "error" ? "bad" : run ? "run" : "") : (st.missing && st.missing.length ? "bad" : "ok"))));
+      top.appendChild(el("span", "wname", st.machine === "controller" ? "Controller" : st.machine));
+      top.appendChild(el("span", "wstate", js ? (STATE_TEXT[js.state] + (js.msg && js.state !== "done" && js.msg.replace(/\u2026$/, "") !== STATE_TEXT[js.state] ? " \u00B7 " + js.msg : "")) : (st.runs ? "" : "Nothing to run")));
+      card.appendChild(top);
+      var tags = el("div", "tags");
+      st.nodes.forEach(function (n) { tags.appendChild(nodeTag(n, true)); });
+      card.appendChild(tags);
+      st.inputs.forEach(function (d) {
+        var l = el("div", "sline"); l.appendChild(document.createTextNode("Image for " + d.to_cls + " #" + d.to + " comes from "));
+        l.appendChild(el("b", null, (d.machine === "controller" ? "Controller" : d.machine) + " (" + d.cls + " #" + d.node + ")"));
+        card.appendChild(l);
+      });
+      if (st.dup_nodes && st.dup_nodes.length) {
+        var l2 = el("div", "sline", "Also loaded here: " + st.dup_nodes.map(function (n) { return n.cls; }).filter(function (c, i, arr) { return arr.indexOf(c) === i; }).join(", "));
+        card.appendChild(l2);
+      }
+      if (st.missing && st.missing.length) card.appendChild(el("div", "sline bad", "Not installed here: " + st.missing.join(", ")));
+      if (js && js.state === "error") card.appendChild(el("div", "sline bad", js.msg));
+      box.appendChild(card);
+    });
+    var rb = document.getElementById("aresults"); rb.textContent = "";
+    if (job && job.results) job.results.forEach(function (r) {
+      var a = document.createElement("a"), img = document.createElement("img"),
+          url = "api/assign/view/" + encodeURIComponent(r.machine) + "?type=" + encodeURIComponent(r.type) +
+                "&subfolder=" + encodeURIComponent(r.subfolder) + "&filename=" + encodeURIComponent(r.filename);
+      a.href = url; a.target = "_blank"; a.rel = "noopener"; img.src = url; img.alt = r.filename; img.loading = "lazy";
+      a.appendChild(img); a.appendChild(el("span", null, "from " + (r.machine === "controller" ? "Controller" : r.machine)));
+      rb.appendChild(a);
+    });
+  }
+
+  function setBusy(b) {
+    abusy = b;
+    document.getElementById("aplanbtn").disabled = b;
+    document.getElementById("arunbtn").disabled = b;
+    document.getElementById("arunbtn").textContent = b ? "Running\u2026" : "Run";
+  }
+  function request_body() { return { workflow: awf.value, rules: arules }; }
+
+  document.getElementById("aplanbtn").onclick = function () {
+    if (!awf.value.trim()) { say("arunmsg", "Paste or load a workflow first.", "bad"); return; }
+    say("arunmsg", "Checking\u2026"); document.getElementById("aresults").textContent = "";
+    api("POST", "api/assign/plan", request_body()).then(function (x) {
+      if (!x.ok) { document.getElementById("aplan").textContent = ""; document.getElementById("anotes").textContent = ""; say("arunmsg", x.d.error || "Could not make a plan.", "bad"); return; }
+      say("arunmsg", x.d.plan.stages.length + (x.d.plan.stages.length === 1 ? " step" : " steps") + " planned.", "ok");
+      renderPlan(x.d.plan, null);
+    }).catch(function () { say("arunmsg", "Could not reach the controller.", "bad"); });
+  };
+
+  document.getElementById("arunbtn").onclick = function () {
+    if (abusy) return;
+    if (!awf.value.trim()) { say("arunmsg", "Paste or load a workflow first.", "bad"); return; }
+    setBusy(true); say("arunmsg", "Starting\u2026"); document.getElementById("aresults").textContent = "";
+    api("POST", "api/assign/plan", request_body()).then(function (p) {
+      if (!p.ok) throw new Error(p.d.error || "Could not make a plan.");
+      renderPlan(p.d.plan, null);
+      return api("POST", "api/assign/run", request_body()).then(function (x) {
+        if (!x.ok) throw new Error(x.d.error || "Could not start.");
+        return pollJob(x.d.job, p.d.plan);
+      });
+    }).catch(function (e) { say("arunmsg", e.message || "Could not reach the controller.", "bad"); setBusy(false); });
+  };
+
+  function pollJob(id, plan) {
+    return api("GET", "api/assign/job/" + id).then(function (x) {
+      if (!x.ok) throw new Error("The run was lost.");
+      var j = x.d; renderPlan(plan, j);
+      if (j.state === "running") { say("arunmsg", "Running\u2026"); return new Promise(function (r) { setTimeout(r, 1000); }).then(function () { return pollJob(id, plan); }); }
+      if (j.state === "error") say("arunmsg", j.error || "The run failed.", "bad");
+      else say("arunmsg", j.results.length ? "Finished. " + j.results.length + (j.results.length === 1 ? " image." : " images.") : "Finished.", "ok");
+      setBusy(false);
+    });
+  }
 
   document.getElementById("theme").onclick = function () {
     var root = document.documentElement;
