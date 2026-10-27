@@ -32,6 +32,9 @@ def main():
     ap.add_argument("--code-file", required=True, help="the pairing code is written here once the worker is ready")
     args = ap.parse_args()
 
+    global log
+    log = comfy.make_logger(os.path.join(args.root, "comfycluster_engine.log"))
+
     log(f"ComfyCluster worker '{args.name}'")
     comfy_dir = comfy.install(args.root, log)
     comfy.download_models(comfy_dir, args.models, log)
@@ -43,7 +46,7 @@ def main():
 
     got, url = threading.Event(), []
     tunnel.start(args.port, args.cache_dir, lambda u: (url.append(u), got.set()), on_error=log,
-                 on_line=lambda l: None)
+                 on_line=lambda l: log("[cloudflared] " + l))
     if not got.wait(120):
         raise SystemExit("The Cloudflare tunnel did not start.")
 

@@ -1,6 +1,7 @@
 """Install, configure and launch ComfyUI. Shared by the controller and the workers."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -8,6 +9,25 @@ import urllib.request
 
 COMFY_REPO = "https://github.com/comfyanonymous/ComfyUI.git"
 DIST_REPO = "https://github.com/robertvoy/ComfyUI-Distributed.git"
+
+
+def make_logger(path):
+    """A log() that prints and also appends to `path`, so the GUI can show the engine log."""
+    try:
+        open(path, "w").close()
+    except OSError:
+        path = None
+
+    def log(msg):
+        line = f"[{time.strftime('%H:%M:%S')}] {msg}"
+        print(line, flush=True)
+        if path:
+            try:
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write(line + "\n")
+            except OSError:
+                pass
+    return log
 
 
 def _run(cmd):
@@ -31,6 +51,11 @@ def install(root, log=print):
     req = os.path.join(dist, "requirements.txt")
     if os.path.isfile(req):
         _run([sys.executable, "-m", "pip", "install", "-q", "-r", req])
+    stats = os.path.join(comfy, "custom_nodes", "ComfyCluster-Stats")      # CPU / GPU load for the monitor
+    os.makedirs(stats, exist_ok=True)
+    here = os.path.dirname(os.path.abspath(__file__))
+    shutil.copyfile(os.path.join(here, "comfycluster_stats.py"), os.path.join(stats, "__init__.py"))
+    shutil.copyfile(os.path.join(here, "logtail.py"), os.path.join(stats, "logtail.py"))
     return comfy
 
 
@@ -63,6 +88,12 @@ def download_models(comfy_dir, models_file, log=print):
         log(f"Model ready: {m['file']}")
 
 
+def worker_entry(name, url, enabled=True):
+    """One remote worker as ComfyUI-Distributed's gpu_config.json lists it."""
+    return {"id": name, "name": name, "host": url.split("://", 1)[1], "port": 443,
+            "type": "remote", "enabled": enabled, "extra_args": ""}
+
+
 def write_worker_config(comfy_dir, workers, log=print):
     """Register remote workers with ComfyUI-Distributed (gpu_config.json).
 
@@ -78,11 +109,7 @@ def write_worker_config(comfy_dir, workers, log=print):
         except (OSError, ValueError):
             cfg = {}
     cfg.setdefault("master", {})
-    cfg["workers"] = [{
-        "id": w["name"], "name": w["name"],
-        "host": w["url"].split("://", 1)[1], "port": 443,
-        "type": "remote", "enabled": True, "extra_args": "",
-    } for w in workers]
+    cfg["workers"] = [worker_entry(w["name"], w["url"]) for w in workers]
     with open(path, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
     log(f"Registered {len(workers)} worker(s) in {path}")

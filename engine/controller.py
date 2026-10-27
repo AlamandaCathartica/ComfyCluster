@@ -29,21 +29,33 @@ def main():
     ap.add_argument("--root", default="/content")
     ap.add_argument("--cache-dir", default=os.path.join(ROOT, ".cache"))
     ap.add_argument("--models", default=os.path.join(ROOT, "models.json"))
-    ap.add_argument("--codes", default="", help="worker pairing codes, separated by spaces or new lines")
+    ap.add_argument("--codes", default="", help="optional worker pairing codes (more can be added in the GUI)")
     ap.add_argument("--comfy-port", type=int, default=8188)
     ap.add_argument("--gui-port", type=int, default=7860)
     ap.add_argument("--key", default="", help="access key for the GUI link")
     ap.add_argument("--url-file", required=True, help="the GUI link is written here once it is up")
     args = ap.parse_args()
 
+    global log
+    log = comfy.make_logger(os.path.join(args.root, "comfycluster_engine.log"))
+
     log("ComfyCluster controller")
-    workers = []
+    workers_file = os.path.join(args.root, "comfycluster_workers.json")
+    known = {}                              # workers added earlier (GUI or notebook) survive a controller restart
+    try:
+        with open(workers_file, encoding="utf-8") as f:
+            known = {w["name"]: w for w in json.load(f)}
+    except (OSError, ValueError, KeyError, TypeError):
+        known = {}
     for w in pairing.parse_codes(args.codes):
+        known[w["name"]] = w
+    workers = []
+    for w in known.values():
         ok = comfy.probe(w["url"], 10)
         log(f"{'ONLINE ' if ok else 'OFFLINE'} {w['name']}")
         if ok:
             workers.append(w)
-    log(f"{len(workers)} worker(s) online")
+    log(f"{len(workers)} worker(s) online" + ("" if workers else " (add workers in the GUI with their pairing codes)"))
 
     comfy_dir = comfy.install(args.root, log)
     comfy.download_models(comfy_dir, args.models, log)
@@ -56,12 +68,11 @@ def main():
 
     got, url = threading.Event(), []
     tunnel.start(args.comfy_port, args.cache_dir, lambda u: (url.append(u), got.set()), on_error=log,
-                 on_line=lambda l: None)
+                 on_line=lambda l: log("[cloudflared] " + l))
     if not got.wait(120):
         raise SystemExit("The ComfyUI tunnel did not start.")
     log("ComfyUI tunnel is up")
 
-    workers_file = os.path.join(args.root, "comfycluster_workers.json")
     with open(workers_file, "w") as f:
         json.dump(workers, f)
 
@@ -71,7 +82,10 @@ def main():
         "--port", str(args.gui_port), "--no-browser", "--tunnel", "--url-file", args.url_file,
         "--cache-dir", args.cache_dir, "--key", args.key,
         "--comfy-url", url[0], "--comfy-local", f"http://127.0.0.1:{args.comfy_port}",
-        "--workers-file", workers_file,
+        "--workers-file", workers_file, "--comfy-dir", comfy_dir,
+        "--engine-log", os.path.join(args.root, "comfycluster_engine.log"),
+        "--comfy-log", os.path.join(args.root, "comfyui.log"),
+        "--distributed-config", os.path.join(comfy_dir, "custom_nodes", "ComfyUI-Distributed", "gpu_config.json"),
     ])
     while proc.poll() is None and gui.poll() is None:
         time.sleep(5)
