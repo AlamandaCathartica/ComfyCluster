@@ -11,6 +11,7 @@ is refused with a message that says which two nodes to put on the same machine.
 """
 import copy
 import os
+import random
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -30,9 +31,7 @@ def _link(v, wf):
 
 
 # ----------------------------------------------------------------------------- planning
-def build_plan(wf, rules, machines, info):
-    """wf: API-format workflow {id: {"class_type", "inputs"}}.  rules: [{"node_type", "worker", "source"}].
-    machines: names that can be used (controller + online workers).  info(cls): ComfyUI object_info entry or None."""
+def _check_wf(wf):
     if not isinstance(wf, dict) or not wf:
         raise PlanError("The workflow is empty.")
     if isinstance(wf.get("nodes"), list):
@@ -40,6 +39,12 @@ def build_plan(wf, rules, machines, info):
     for nid, n in wf.items():
         if not isinstance(n, dict) or "class_type" not in n or not isinstance(n.get("inputs", {}), dict):
             raise PlanError("This is not an API-format workflow. In ComfyUI use Workflow > Export (API).")
+
+
+def build_plan(wf, rules, machines, info):
+    """wf: API-format workflow {id: {"class_type", "inputs"}}.  rules: [{"node_type", "worker", "source"}].
+    machines: names that can be used (controller + online workers).  info(cls): ComfyUI object_info entry or None."""
+    _check_wf(wf)
     valid = set(machines)
     rules = [r for r in rules if r.get("enabled", True) and (r.get("node_type") or "").strip()]
 
@@ -206,9 +211,84 @@ def build_plan(wf, rules, machines, info):
     return dict(stages=out, notes=notes)
 
 
+def _coerce(old, val):
+    """Turn what was typed into the type the input already has (number, switch or text)."""
+    if isinstance(old, bool):
+        return val if isinstance(val, bool) else str(val).strip().lower() in ("1", "true", "yes", "on")
+    try:
+        if isinstance(old, int):
+            return val if isinstance(val, int) and not isinstance(val, bool) else int(str(val).strip())
+        if isinstance(old, float):
+            return float(str(val).strip())
+    except ValueError:
+        raise PlanError(f"\u201c{val}\u201d is not a number.") from None
+    return str(val)
+
+
+def build_mirror(wf, machines, overrides, info, randomize=True):
+    """Mirror mode: every chosen machine runs the whole workflow.
+    overrides: [{"machine": name or "all", "node": id, "input": name, "value": text}] change one input on one machine.
+    With randomize, every machine except the controller gets its own seed, so the images differ."""
+    _check_wf(wf)
+    machines = list(dict.fromkeys(machines))
+    if not machines:
+        raise PlanError("Pick at least one machine to mirror to.")
+    cache, outputs, files = {}, [], []
+    for nid, n in wf.items():
+        cls = n["class_type"]
+        if cls not in cache:
+            cache[cls] = info(cls)
+            if cache[cls] is None:
+                raise PlanError(f"The node type \u201c{cls}\u201d is not installed on the controller or on any connected worker.")
+        if cache[cls].get("output_node"):
+            outputs.append(nid)
+        img = n.get("inputs", {}).get("image")
+        if cls.startswith("LoadImage") and isinstance(img, str) and img:
+            name = img.split(" [")[0]
+            sub, _, fn = name.rpartition("/")
+            files.append(dict(filename=fn, subfolder=sub, type="input"))
+    if not outputs:
+        raise PlanError("Nothing to run: the workflow has no node that produces output.")
+
+    clean = []
+    for o in overrides or []:
+        m, nid, k = o.get("machine", "all"), str(o.get("node", "")), str(o.get("input", ""))
+        if m != "all" and m not in machines:
+            continue                                        # that machine is not part of this run
+        if nid not in wf or k not in wf[nid].get("inputs", {}):
+            raise PlanError(f"Node #{nid} has no input \u201c{k}\u201d.")
+        if _link(wf[nid]["inputs"][k], wf):
+            raise PlanError(f"{wf[nid]['class_type']} #{nid}: \u201c{k}\u201d is connected to another node, so it has no value to change.")
+        clean.append((m, nid, k, o.get("value", "")))
+
+    stages = []
+    for m in machines:
+        prompt, changes, seeds = copy.deepcopy(wf), [], []
+        if randomize and m != CTL:
+            for nid, n in prompt.items():
+                for k in ("seed", "noise_seed"):
+                    v = n["inputs"].get(k)
+                    if isinstance(v, int) and not isinstance(v, bool):
+                        n["inputs"][k] = random.randrange(2 ** 48)
+                        seeds.append(n["inputs"][k])
+        for scope in ("all", m):                            # settings for one machine win over "all machines"
+            for who, nid, k, val in clean:
+                if who != scope:
+                    continue
+                new = _coerce(wf[nid]["inputs"][k], val)
+                prompt[nid]["inputs"][k] = new
+                if new != wf[nid]["inputs"][k]:
+                    changes.append(f"{wf[nid]['class_type']} #{nid}: {k} = {new}")
+        nodes = [dict(id=n, cls=wf[n]["class_type"]) for n in wf]
+        stages.append(dict(id=f"{m}@0", machine=m, level=0, prompt=prompt, members=list(wf), dups=[], loads=[], exports=[],
+                           outputs=outputs, runs=True, nodes=nodes, dup_nodes=[], inputs=[], mirror=True, files=files,
+                           changes=changes, note=("Done \u00B7 seed " + ", ".join(map(str, seeds[:3]))) if seeds else "Done"))
+    return dict(stages=stages, notes=([] if randomize else ["Seeds are not changed, so machines with identical settings give identical images."]))
+
+
 def public_plan(plan):
     """The plan without the prompts, for the page."""
-    keep = ("id", "machine", "level", "nodes", "dup_nodes", "inputs", "runs", "missing")
+    keep = ("id", "machine", "level", "nodes", "dup_nodes", "inputs", "runs", "missing", "mirror", "changes")
     return dict(notes=plan["notes"], warnings=plan.get("warnings", []),
                 stages=[{k: st.get(k) for k in keep} for st in plan["stages"]])
 
@@ -262,14 +342,17 @@ class Cluster:
         plan["warnings"] = warn
         return plan
 
-    def transfer(self, f, to_machine, stem):
+    def transfer(self, f, to_machine, stem, keep=False):
         """Copy one image from the machine that made it to the input folder of `to_machine`. Returns the LoadImage value."""
         r = requests.get(self.bases[f["machine"]] + "/view", timeout=120,
                          params=dict(filename=f["filename"], subfolder=f.get("subfolder", ""), type=f.get("type", "temp")))
         r.raise_for_status()
-        name = stem + (os.path.splitext(f["filename"])[1] or ".png")
+        name = f["filename"] if keep else stem + (os.path.splitext(f["filename"])[1] or ".png")
+        data = {"overwrite": "true", "type": "input"}
+        if keep and f.get("subfolder"):
+            data["subfolder"] = f["subfolder"]
         up = requests.post(self.bases[to_machine] + "/upload/image", timeout=120, files={"image": (name, r.content, "image/png")},
-                           data={"overwrite": "true", "type": "input"})
+                           data=data)
         up.raise_for_status()
         d = up.json()
         return f"{d['subfolder']}/{d['name']}" if d.get("subfolder") else d["name"]
@@ -340,6 +423,9 @@ def _run_stage(cluster, st, store, job, idx):
         return
     prompt = copy.deepcopy(st["prompt"])
     js.update(state="running", msg="Moving images\u2026" if st["loads"] else "Running\u2026")
+    if st["machine"] != CTL:                                # mirror mode: input images the controller has, the worker may not
+        for f in st.get("files", []):
+            cluster.transfer(dict(f, machine=CTL), st["machine"], "", keep=True)
     for ld in st["loads"]:
         files = store.get((ld["src"], ld["slot"])) or []
         if not files:
@@ -354,7 +440,7 @@ def _run_stage(cluster, st, store, job, idx):
         for f in outs.get(nid, {}).get("images", []):
             job["results"].append(dict(machine=st["machine"], filename=f["filename"], subfolder=f.get("subfolder", ""),
                                        type=f.get("type", "output")))
-    js.update(state="done", msg="Done")
+    js.update(state="done", msg=st.get("note") or "Done")
 
 
 def new_job(plan):

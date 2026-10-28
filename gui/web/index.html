@@ -312,7 +312,12 @@
   .win.big.asgwin{width:min(1000px,calc(100% - 48px));background:var(--frame);}
   .win.big.asgwin .win-bar{padding:22px 16px 8px 32px;}
   .win.big.asgwin .win-title strong{font:400 28px/36px var(--font);}
-  .asg-tabs{padding:4px 32px 10px;}
+  .asg-tabs{padding:4px 32px 10px;display:flex;flex-direction:column;gap:8px;}
+  .arow.five{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.2fr) 40px;}
+  .acheck{display:flex;align-items:center;gap:10px;font:400 14px/20px var(--font);color:var(--on-surface);cursor:pointer;}
+  .acheck input{width:18px;height:18px;accent-color:var(--primary);flex:none;}
+  .chip[disabled]{opacity:.5;cursor:not-allowed;}
+  .chip.off{background:var(--frame-high);color:var(--on-surface-variant);}
   .win.big.asgwin .win-body{display:flex;flex-direction:column;gap:14px;padding:4px 32px 12px;}
   .apanel{display:flex;flex-direction:column;gap:14px;min-width:0;}
   .ahint{margin:0;font:400 13px/20px var(--font);letter-spacing:.2px;color:var(--on-surface-variant);}
@@ -371,11 +376,27 @@
     .win.big.asgwin{width:calc(100% - 24px);}
     .win.big.asgwin .win-body{padding:4px 14px 10px;}
     .asg-tabs{padding:2px 16px 8px;}
-    .arow{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}
+    .arow,.arow.five{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}
     .arow .field:first-child{grid-column:1 / -1;}
     .arow .iconbtn{justify-self:end;}
   }
 
+  /* download from link / files window */
+  .lpanel{display:flex;flex-direction:column;gap:12px;}
+  .lpanel .field input{width:100%;}
+  .lrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;}
+  .frow{display:flex;align-items:center;gap:12px;background:var(--frame-high);border-radius:16px;padding:10px 12px 10px 16px;min-width:0;}
+  .frow .fname{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+  .frow .fname strong,.frow .fopen strong{font:500 14px/20px var(--font);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--on-surface);}
+  .frow .fname span,.frow .fopen span{font:400 12px/16px var(--font);letter-spacing:.3px;color:var(--on-surface-variant);}
+  .frow button.fopen{all:unset;cursor:pointer;display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
+  .frow button.fopen:focus-visible{outline:2px solid var(--primary);outline-offset:4px;border-radius:8px;}
+  a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center;flex:none;}
+  #fmsg:empty{display:none;}
+  @media (max-width:600px){#fzip{flex:1 1 100%;}.fcrumb .path{word-break:normal;overflow-wrap:anywhere;}}
+  .fcrumb{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .fcrumb .path{flex:1;min-width:0;font:400 13px/18px var(--font);letter-spacing:.2px;color:var(--on-surface-variant);word-break:break-all;}
+  .flist{display:flex;flex-direction:column;gap:8px;}
   /* add a worker by pairing code */
   .padd{display:flex;align-items:flex-end;gap:12px;padding:4px 32px 12px;}
   .padd .field{flex:1;min-width:0;}
@@ -441,6 +462,10 @@
       <button class="pill" id="ubtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="uwin">
         <svg viewBox="0 0 24 24"><path d="M12 16V4M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
         <span class="pill-label">Upload</span>
+      </button>
+      <button class="pill" id="fbtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="fwin">
+        <svg viewBox="0 0 24 24"><path d="M12 4v12M7.5 11.5L12 16l4.5-4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+        <span class="pill-label">Files</span>
       </button>
       <button class="toggle" id="lbtn" type="button" aria-label="Server log" aria-haspopup="dialog" aria-expanded="false" aria-controls="lwin">
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7.5 9.5l3 2.5-3 2.5M13 15h3.5"/></svg>
@@ -549,6 +574,10 @@
       </button>
     </div>
     <div class="asg-tabs">
+      <div class="seg" role="tablist" aria-label="Mode">
+        <button type="button" role="tab" id="amode-manual" aria-selected="true">Manual mode</button>
+        <button type="button" role="tab" id="amode-mirror" aria-selected="false">Mirror mode</button>
+      </div>
       <div class="seg" role="tablist" aria-label="Assignment steps">
         <button type="button" role="tab" id="atab-rules" aria-selected="true">1 &middot; Rules</button>
         <button type="button" role="tab" id="atab-run" aria-selected="false">2 &middot; Run a workflow</button>
@@ -566,6 +595,17 @@
           <span class="amsg" id="asavemsg" role="status"></span>
         </div>
         <datalist id="atypes"></datalist>
+      </div>
+      <div class="apanel" id="apanel-mirror" hidden>
+        <p class="ahint">Every machine you pick runs the <b>whole workflow</b>, so one Run gives <b>one image per machine</b>.
+          Use the settings to change a value on one machine, for example a different prompt or size on worker2.</p>
+        <div class="chips" id="amachines"></div>
+        <label class="acheck"><input type="checkbox" id="amseed" checked /> Give every worker its own random seed (the controller keeps the workflow&rsquo;s seed)</label>
+        <div class="apanel" id="aover"></div>
+        <div class="abar">
+          <button class="btn tonal" id="aoveradd" type="button">Add setting</button>
+          <span class="amsg" id="aovermsg" role="status"></span>
+        </div>
       </div>
       <div class="apanel" id="apanel-run" hidden>
         <p class="ahint">In ComfyUI choose <b>Workflow &rsaquo; Export (API)</b>, then paste the file here or load it. Every machine must have the
@@ -591,6 +631,31 @@
     </div>
   </section>
 
+  <div class="scrim" id="fscrim" hidden></div>
+  <section class="win big asgwin" id="fwin" role="dialog" aria-label="Download files from the controller" hidden>
+    <div class="win-bar">
+      <div class="win-title"><strong>Files</strong><span>Download files from the controller</span></div>
+      <button class="iconbtn" id="fclose" type="button" aria-label="Close files window">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="win-body">
+      <div class="chips" id="froots" role="tablist" aria-label="Folder"></div>
+      <div class="fcrumb">
+        <button class="btn" id="fup" type="button">Up</button>
+        <span class="path" id="fpath"></span>
+        <a class="btn tonal" id="fzip" href="#" hidden>Download folder as zip</a>
+      </div>
+      <p class="amsg" id="fmsg" role="status"></p>
+      <div class="flist" id="flist"></div>
+    </div>
+    <div class="win-foot">
+      <button class="btn" id="frefresh" type="button">Refresh</button>
+      <span class="grow"></span>
+      <button class="btn tonal" id="fdone" type="button">Close</button>
+    </div>
+  </section>
+
   <section class="win" id="uwin" role="dialog" aria-label="Upload models and custom nodes" hidden>
     <div class="win-bar">
       <div class="win-title"><strong>Upload</strong><span id="usub">Models and custom nodes</span></div>
@@ -602,6 +667,7 @@
       <div class="seg" role="tablist" aria-label="What to upload">
         <button type="button" role="tab" id="tmodel" aria-selected="true">Model</button>
         <button type="button" role="tab" id="tnode" aria-selected="false">Custom node</button>
+        <button type="button" role="tab" id="tlink" aria-selected="false">From link</button>
       </div>
       <label class="field" id="ufolderwrap">Save in models/
         <select id="ufolder"></select>
@@ -615,10 +681,35 @@
       <p class="uerr" id="uerr" hidden></p>
       <div id="uq" style="display:flex;flex-direction:column;gap:8px;"></div>
       <p class="unote" id="unote"></p>
+      <div class="lpanel" id="lpanel" hidden>
+        <label class="field">Link to the file
+          <input type="text" id="lurl" placeholder="https://huggingface.co/.../resolve/main/model.safetensors" spellcheck="false" autocomplete="off" />
+        </label>
+        <div class="lrow">
+          <label class="field">Save as
+            <select id="lkind"><option value="model">Model</option><option value="node">Custom node (.zip)</option></select>
+          </label>
+          <label class="field" id="lfolderwrap">Save in models/
+            <select id="lfolder"></select>
+          </label>
+        </div>
+        <div class="lrow">
+          <label class="field">File name (optional)
+            <input type="text" id="lname" placeholder="Taken from the link" spellcheck="false" autocomplete="off" />
+          </label>
+          <label class="field">Access token (optional)
+            <input type="password" id="ltoken" placeholder="Hugging Face or Civitai" autocomplete="off" />
+          </label>
+        </div>
+        <p class="uerr" id="lerr" hidden></p>
+        <div id="lq" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <p class="unote">The controller downloads the file itself, so nothing passes through your device. The token is used for this download only and is not stored. Workers need the same file.</p>
+      </div>
     </div>
     <div class="win-foot">
       <button class="btn" id="uclear" type="button">Clear finished</button>
       <button class="btn go" id="ustart" type="button">Upload</button>
+      <button class="btn go" id="lstart" type="button" hidden>Download</button>
     </div>
   </section>
 
@@ -673,7 +764,7 @@
     wwin.hidden = !open;
     document.getElementById("wscrim").hidden = !open;
     wbtn.setAttribute("aria-expanded", String(open));
-    if (open) { renderWorkers(); pfit(); setUpOpen(false, true); setLogOpen(false, true); setAsgOpen(false, true); if (!workers.length) pcode.focus(); }
+    if (open) { renderWorkers(); pfit(); setUpOpen(false, true); setLogOpen(false, true); setAsgOpen(false, true); setFilesOpen(false, true); if (!workers.length) pcode.focus(); }
     else { pmsg.textContent = ""; if (!quiet) wbtn.focus(); }
   }
   wbtn.onclick = function () { setOpen(wwin.hidden); };
@@ -686,6 +777,7 @@
     else if (!uwin.hidden) setUpOpen(false);
     else if (!lwin.hidden) setLogOpen(false);
     else if (!awin.hidden) setAsgOpen(false);
+    else if (!fwin.hidden) setFilesOpen(false);
   });
 
   function stateOf(w) {
@@ -846,7 +938,7 @@
       uq = document.getElementById("uq"), uerr = document.getElementById("uerr"),
       ufolder = document.getElementById("ufolder"), uhint = document.getElementById("uhint"),
       unote = document.getElementById("unote"), ustart = document.getElementById("ustart"),
-      tmodel = document.getElementById("tmodel"), tnode = document.getElementById("tnode"),
+      tmodel = document.getElementById("tmodel"), tnode = document.getElementById("tnode"), tlink = document.getElementById("tlink"),
       ucfg = { enabled: true, folders: ["checkpoints", "loras", "vae"], chunk: 32 * 1048576,
                model_ext: [".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".gguf"], node_ext: [".zip", ".py"] },
       ukind = "model", queue = [], uploading = false;
@@ -854,7 +946,7 @@
   function setUpOpen(open, quiet) {
     uwin.hidden = !open;
     ubtn.setAttribute("aria-expanded", String(open));
-    if (open) { setOpen(false, true); setLogOpen(false, true); setAsgOpen(false, true); renderQueue(); } else if (!quiet) ubtn.focus();
+    if (open) { setOpen(false, true); setLogOpen(false, true); setAsgOpen(false, true); setFilesOpen(false, true); renderQueue(); } else if (!quiet) ubtn.focus();
   }
   ubtn.onclick = function () { setUpOpen(uwin.hidden); };
   document.getElementById("uclose").onclick = function () { setUpOpen(false); };
@@ -868,6 +960,14 @@
 
   function setKind(k) {
     ukind = k;
+    var link = k === "link";
+    tlink.setAttribute("aria-selected", String(link));
+    ["udrop", "uq", "unote", "uclear", "ustart"].forEach(function (id) { document.getElementById(id).hidden = link; });
+    document.getElementById("lpanel").hidden = !link; document.getElementById("lstart").hidden = !link;
+    if (link) {
+      tmodel.setAttribute("aria-selected", "false"); tnode.setAttribute("aria-selected", "false");
+      document.getElementById("ufolderwrap").hidden = true; renderLinks(); return;
+    }
     tmodel.setAttribute("aria-selected", String(k === "model"));
     tnode.setAttribute("aria-selected", String(k === "node"));
     document.getElementById("ufolderwrap").hidden = k !== "model";
@@ -987,7 +1087,7 @@
   function setLogOpen(open, quiet) {
     lwin.hidden = !open; lscrim.hidden = !open;
     lbtn.setAttribute("aria-expanded", String(open));
-    if (open) { setOpen(false, true); setUpOpen(false, true); setAsgOpen(false, true); buildSources(); resetView(); pollLog(); }
+    if (open) { setOpen(false, true); setUpOpen(false, true); setAsgOpen(false, true); setFilesOpen(false, true); buildSources(); resetView(); pollLog(); }
     else { lgen++; clearTimeout(ltimer); if (!quiet) lbtn.focus(); }
   }
   lbtn.onclick = function () { setLogOpen(lwin.hidden); };
@@ -1064,6 +1164,133 @@
     resetView("Nothing to show."); pollLog();
   };
 
+  // ---- download from a link (inside the upload window) ------------------------
+  var lq = document.getElementById("lq"), lurl = document.getElementById("lurl"), lname = document.getElementById("lname"),
+      ltoken = document.getElementById("ltoken"), lkind = document.getElementById("lkind"), lfolder = document.getElementById("lfolder"),
+      lstart = document.getElementById("lstart"), lerr = document.getElementById("lerr"), ljobs = [], ltimer = null;
+
+  function fillLinkFolders() {
+    if (lfolder.options.length) return;
+    Array.prototype.forEach.call(ufolder.options, function (o) { var c = el("option", null, o.textContent); c.value = o.value; lfolder.appendChild(c); });
+  }
+  lkind.onchange = function () { document.getElementById("lfolderwrap").hidden = lkind.value !== "model"; };
+  tlink.onclick = function () { fillLinkFolders(); setKind("link"); };
+  function linkErr(m) { lerr.hidden = !m; lerr.textContent = m || ""; }
+  function linkActive(j) { return ["starting", "connecting", "downloading"].indexOf(j.state) >= 0; }
+
+  function renderLinks() {
+    if (!lq || ukind !== "link") return;
+    lq.textContent = "";
+    ljobs.forEach(function (j) {
+      var cls = j.state === "done" ? "done" : j.state === "error" ? "err" : "up", row = el("div", "urow " + cls), top = el("div", "utop");
+      top.appendChild(el("span", "uname", j.name || j.url));
+      top.appendChild(el("span", "uchip", j.kind === "node" ? "custom node" : j.folder));
+      var x = el("button", linkActive(j) ? "btn" : "iconbtn", linkActive(j) ? "Cancel" : ""); x.type = "button";
+      if (linkActive(j)) x.onclick = function () { fetch("api/upload/link/" + j.id + "/cancel", { method: "POST" }); };
+      else { x.setAttribute("aria-label", "Remove"); x.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'; x.onclick = function () { ljobs.splice(ljobs.indexOf(j), 1); renderLinks(); }; }
+      top.appendChild(x); row.appendChild(top);
+      var pct = j.total ? Math.min(100, j.done / j.total * 100) : (j.state === "done" ? 100 : j.done ? 35 : 0), bar = el("div", "bar"), fill = el("i");
+      fill.style.width = (j.state === "done" ? 100 : pct) + "%"; bar.appendChild(fill); row.appendChild(bar);
+      var st = el("div", "ustate"), label = j.state === "starting" ? "Starting\u2026" : j.state === "connecting" ? "Connecting\u2026"
+        : j.state === "downloading" ? (j.total ? Math.round(pct) + "%" : "Downloading\u2026") : j.msg;
+      st.appendChild(el("span", null, label));
+      st.appendChild(el("span", null, j.state === "downloading" || j.state === "done" ? (j.total ? fmt(j.done) + " of " + fmt(j.total) : fmt(j.done)) : ""));
+      row.appendChild(st); lq.appendChild(row);
+    });
+  }
+  function pollLinks() {
+    clearTimeout(ltimer);
+    var act = ljobs.filter(linkActive);
+    if (!act.length) { lstart.disabled = false; lstart.textContent = "Download"; return; }
+    Promise.all(act.map(function (j) {
+      return fetch("api/upload/link/" + j.id, { cache: "no-store" }).then(function (r) { return r.json(); })
+        .then(function (d) { if (!d.error) Object.keys(d).forEach(function (k) { j[k] = d[k]; }); })
+        .catch(function () {});
+    })).then(function () { renderLinks(); ltimer = setTimeout(pollLinks, 1000); });
+  }
+  lstart.onclick = function () {
+    var url = lurl.value.trim();
+    if (!url) { linkErr("Paste a link first."); return; }
+    linkErr("");
+    var body = { url: url, kind: lkind.value, folder: lfolder.value, name: lname.value.trim(), token: ltoken.value.trim() };
+    fetch("api/upload/link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (x) {
+        if (!x.ok) { linkErr(x.d.error || "Could not start the download."); return; }
+        ljobs.unshift({ id: x.d.job, url: url.split("?")[0], kind: body.kind, folder: body.kind === "model" ? body.folder : "", name: body.name,
+                        state: "starting", done: 0, total: 0, msg: "" });
+        lurl.value = ""; lname.value = ""; ltoken.value = "";
+        renderLinks(); pollLinks();
+      }).catch(function () { linkErr("Could not reach the controller."); });
+  };
+  lurl.addEventListener("keydown", function (e) { if (e.key === "Enter") lstart.click(); });
+
+  // ---- files window -------------------------------------------------------------
+  var fbtn = document.getElementById("fbtn"), fwin = document.getElementById("fwin"), fscrim = document.getElementById("fscrim"),
+      fcfg = null, froot = "", fpath = "";
+  function setFilesOpen(open, quiet) {
+    fwin.hidden = !open; fscrim.hidden = !open;
+    fbtn.setAttribute("aria-expanded", String(open));
+    if (open) { setOpen(false, true); setUpOpen(false, true); setLogOpen(false, true); setAsgOpen(false, true); initFiles(); }
+    else if (!quiet) fbtn.focus();
+  }
+  fbtn.onclick = function () { setFilesOpen(fwin.hidden); };
+  document.getElementById("fclose").onclick = function () { setFilesOpen(false); };
+  document.getElementById("fdone").onclick = function () { setFilesOpen(false); };
+  fscrim.onclick = function () { setFilesOpen(false); };
+  document.getElementById("frefresh").onclick = function () { loadFiles(); };
+  document.getElementById("fup").onclick = function () { fpath = fpath.split("/").slice(0, -1).join("/"); loadFiles(); };
+
+  function fsay(t, bad) { var m = document.getElementById("fmsg"); m.textContent = t || ""; m.className = "amsg" + (bad ? " bad" : ""); }
+  function fq(path) { return "root=" + encodeURIComponent(froot) + "&path=" + encodeURIComponent(path); }
+  function initFiles() {
+    if (fcfg) { loadFiles(); return; }
+    fetch("api/files/roots", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
+      fcfg = d; var box = document.getElementById("froots"); box.textContent = "";
+      if (!d.enabled || !d.roots.length) { fsay("Files are not available in this session.", true); return; }
+      froot = d.roots[0].id;
+      d.roots.forEach(function (r) {
+        var c = el("button", "chip", r.label); c.type = "button"; c.dataset.root = r.id;
+        c.onclick = function () { froot = r.id; fpath = ""; loadFiles(); };
+        box.appendChild(c);
+      });
+      loadFiles();
+    }).catch(function () { fsay("Could not reach the controller.", true); });
+  }
+  function loadFiles() {
+    if (!froot) return;
+    fsay("Loading\u2026");
+    fetch("api/files/list?" + fq(fpath), { cache: "no-store" }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (x) {
+        if (!x.ok) { fsay(x.d.error || "Could not open that folder.", true); return; }
+        renderFiles(x.d);
+      }).catch(function () { fsay("Could not reach the controller.", true); });
+  }
+  function renderFiles(d) {
+    fsay(d.truncated ? "Showing the first 1000 items." : "");
+    Array.prototype.forEach.call(document.getElementById("froots").children, function (c) { c.className = "chip" + (c.dataset.root === froot ? " used" : ""); });
+    var label = fcfg.roots.filter(function (r) { return r.id === froot; })[0].label;
+    document.getElementById("fpath").textContent = label + (d.path ? " / " + d.path.split("/").join(" / ") : "");
+    document.getElementById("fup").disabled = !d.path;
+    var z = document.getElementById("fzip"); z.hidden = !d.entries.length; z.href = "api/files/zip?" + fq(d.path);
+    var list = document.getElementById("flist"); list.textContent = "";
+    if (!d.entries.length) list.appendChild(el("div", "win-empty", "Nothing here yet."));
+    d.entries.forEach(function (e) {
+      var row = el("div", "frow"), full = (d.path ? d.path + "/" : "") + e.name,
+          when = new Date(e.mtime * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+      if (e.dir) {
+        var o = el("button", "fopen"); o.type = "button"; o.appendChild(el("strong", null, e.name + "/")); o.appendChild(el("span", null, "Folder \u00B7 " + when));
+        o.onclick = function () { fpath = full; loadFiles(); };
+        row.appendChild(o);
+        var a1 = el("a", "btn", "Zip"); a1.href = "api/files/zip?" + fq(full); a1.title = "Download this folder as a zip"; row.appendChild(a1);
+      } else {
+        var n = el("div", "fname"); n.appendChild(el("strong", null, e.name)); n.appendChild(el("span", null, fmt(e.size) + " \u00B7 " + when)); row.appendChild(n);
+        var a2 = el("a", "btn tonal", "Download"); a2.href = "api/files/get?" + fq(full); a2.setAttribute("download", e.name); row.appendChild(a2);
+      }
+      list.appendChild(row);
+    });
+  }
+
   // ---- node assignment window -------------------------------------------------
   var abtn = document.getElementById("abtn"), awin = document.getElementById("awin"), ascrim = document.getElementById("ascrim"),
       arulesBox = document.getElementById("arules"), achips = document.getElementById("achips"), awf = document.getElementById("awf"),
@@ -1072,7 +1299,7 @@
   function setAsgOpen(open, quiet) {
     awin.hidden = !open; ascrim.hidden = !open;
     abtn.setAttribute("aria-expanded", String(open));
-    if (open) { setOpen(false, true); setUpOpen(false, true); setLogOpen(false, true); loadAssign(); renderRules(); }
+    if (open) { setOpen(false, true); setUpOpen(false, true); setLogOpen(false, true); setFilesOpen(false, true); loadAssign(); renderRules(); renderMirror(); }
     else if (!quiet) abtn.focus();
   }
   abtn.onclick = function () { setAsgOpen(awin.hidden); };
@@ -1087,14 +1314,29 @@
   }
   function say(id, text, cls) { var m = document.getElementById(id); m.textContent = text || ""; m.className = "amsg" + (cls ? " " + cls : ""); }
 
+  var amode = "manual", atab = "rules", amach = null, aover = [];
   function showTab(t) {
-    var rules = t === "rules";
+    atab = t;
+    var rules = t === "rules", mirror = amode === "mirror";
     document.getElementById("atab-rules").setAttribute("aria-selected", String(rules));
     document.getElementById("atab-run").setAttribute("aria-selected", String(!rules));
-    document.getElementById("apanel-rules").hidden = !rules;
+    document.getElementById("atab-rules").textContent = mirror ? "1 \u00B7 Mirror setup" : "1 \u00B7 Rules";
+    document.getElementById("apanel-rules").hidden = !(rules && !mirror);
+    document.getElementById("apanel-mirror").hidden = !(rules && mirror);
     document.getElementById("apanel-run").hidden = rules;
-    if (rules) renderChips();
+    if (rules && !mirror) renderChips();
+    if (rules && mirror) renderMirror();
   }
+  function setMode(m) {
+    amode = m; aplanned = false;
+    document.getElementById("amode-manual").setAttribute("aria-selected", String(m === "manual"));
+    document.getElementById("amode-mirror").setAttribute("aria-selected", String(m === "mirror"));
+    document.getElementById("aplan").textContent = ""; document.getElementById("anotes").textContent = "";
+    document.getElementById("aresults").textContent = ""; say("arunmsg", "");
+    showTab(atab);
+  }
+  document.getElementById("amode-manual").onclick = function () { setMode("manual"); };
+  document.getElementById("amode-mirror").onclick = function () { setMode("mirror"); };
   document.getElementById("atab-rules").onclick = function () { showTab("rules"); };
   document.getElementById("atab-run").onclick = function () { showTab("run"); };
 
@@ -1182,6 +1424,72 @@
     }).catch(function () { say("asavemsg", "Could not reach the controller.", "bad"); });
   };
 
+
+  // ---- mirror mode
+  function isLinkVal(v) { return Array.isArray(v) && v.length === 2 && typeof v[0] === "string" && typeof v[1] === "number"; }
+  function wfNodes() {                               // nodes of the pasted workflow that have at least one value you can change
+    var wf; try { wf = JSON.parse(awf.value); } catch (e) { return null; }
+    if (!wf || typeof wf !== "object" || Array.isArray(wf.nodes)) return null;
+    var out = [];
+    Object.keys(wf).forEach(function (id) {
+      var n = wf[id]; if (!n || !n.class_type || !n.inputs) return;
+      var vals = {}, any = false;
+      Object.keys(n.inputs).forEach(function (k) { if (!isLinkVal(n.inputs[k])) { vals[k] = n.inputs[k]; any = true; } });
+      if (any) out.push({ id: id, cls: n.class_type, vals: vals });
+    });
+    return out;
+  }
+  function optSelect(opts, value, onchange) {
+    var s = document.createElement("select");
+    opts.forEach(function (o) { var e = el("option", null, o.t); e.value = o.v; s.appendChild(e); });
+    if (value !== undefined && !opts.some(function (o) { return o.v === value; })) { var g = el("option", null, String(value) + " (not found)"); g.value = value; s.appendChild(g); }
+    s.value = value; s.onchange = function () { onchange(s.value); };
+    return s;
+  }
+  function showVal(v) { return typeof v === "object" ? JSON.stringify(v) : String(v); }
+  function onlineMachines() {
+    return ["controller"].concat(workers.filter(function (w) { return w.enabled && w.online; }).map(function (w) { return w.name; }));
+  }
+  function chosenMachines() { return machineNames().filter(function (n) { return (amach || onlineMachines()).indexOf(n) >= 0 && onlineMachines().indexOf(n) >= 0; }); }
+
+  function renderMirror() {
+    if (awin.hidden || document.getElementById("apanel-mirror").hidden) return;
+    var box = document.getElementById("amachines"), on = onlineMachines(), chosen = chosenMachines();
+    box.textContent = ""; box.appendChild(el("span", "amsg", "Run on:"));
+    machineNames().forEach(function (n) {
+      var avail = on.indexOf(n) >= 0, sel = chosen.indexOf(n) >= 0;
+      var c = el("button", "chip" + (sel ? " used" : avail ? " off" : ""), machineLabel(n));
+      c.type = "button"; c.disabled = !avail; c.setAttribute("aria-pressed", String(sel));
+      c.onclick = function () { amach = sel ? chosen.filter(function (x) { return x !== n; }) : chosen.concat([n]); renderMirror(); };
+      box.appendChild(c);
+    });
+    var over = document.getElementById("aover"), nodes = wfNodes(); over.textContent = "";
+    document.getElementById("aoveradd").disabled = !nodes || !nodes.length;
+    if (!nodes) { over.appendChild(el("div", "win-empty", "To change a value on one machine, first paste or load a workflow in step 2.")); return; }
+    if (!aover.length) over.appendChild(el("div", "win-empty", "No settings yet. Every machine runs the workflow exactly as exported" + (document.getElementById("amseed").checked ? ", apart from the seed." : ".")));
+    aover.forEach(function (o) {
+      var row = el("div", "arow five"), node = nodes.filter(function (n) { return n.id === o.node; })[0];
+      row.appendChild(field("Machine", optSelect([{ v: "all", t: "All machines" }].concat(chosen.map(function (n) { return { v: n, t: machineLabel(n) }; })), o.machine, function (v) { o.machine = v; })));
+      row.appendChild(field("Node", optSelect(nodes.map(function (n) { return { v: n.id, t: n.cls + " #" + n.id }; }), o.node, function (v) {
+        o.node = v; var nn = nodes.filter(function (n) { return n.id === v; })[0]; o.input = Object.keys(nn.vals)[0]; o.value = showVal(nn.vals[o.input]); renderMirror(); })));
+      row.appendChild(field("Input", optSelect(node ? Object.keys(node.vals).map(function (k) { return { v: k, t: k }; }) : [], o.input, function (v) {
+        o.input = v; o.value = showVal(node.vals[v]); renderMirror(); })));
+      var val = el("input"); val.type = "text"; val.value = o.value; val.spellcheck = false; val.autocomplete = "off";
+      val.title = node && node.vals[o.input] !== undefined ? "Workflow value: " + showVal(node.vals[o.input]) : ""; val.oninput = function () { o.value = val.value; };
+      row.appendChild(field("Value", val));
+      var x = el("button", "iconbtn"); x.type = "button"; x.setAttribute("aria-label", "Remove setting");
+      x.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+      x.onclick = function () { aover.splice(aover.indexOf(o), 1); renderMirror(); };
+      row.appendChild(x); over.appendChild(row);
+    });
+  }
+  document.getElementById("aoveradd").onclick = function () {
+    var nodes = wfNodes(); if (!nodes || !nodes.length) return;
+    var pick = nodes.filter(function (n) { return n.vals.seed !== undefined || n.vals.text !== undefined; })[0] || nodes[0], k = Object.keys(pick.vals)[0];
+    aover.push({ machine: "all", node: pick.id, input: k, value: showVal(pick.vals[k]) }); renderMirror();
+  };
+  document.getElementById("amseed").onchange = function () { renderMirror(); };
+
   // ---- workflow, plan and run
   var EXAMPLE = {
     "1": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "v1-5-pruned-emaonly.safetensors" } },
@@ -1202,11 +1510,11 @@
   document.getElementById("awfex").onclick = function () {
     awf.value = JSON.stringify(EXAMPLE, null, 1);
     var real = workers.filter(function (w) { return w.enabled && w.online; });
-    if (!arules.length && real.length) {            // the rule from the request: FaceDetailer on one worker, image from another
+    if (amode === "manual" && !arules.length && real.length) {            // the rule from the request: FaceDetailer on one worker, image from another
       arules.push({ node_type: "FaceDetailer", worker: (real[1] || real[0]).name, source: real.length > 1 ? real[0].name : "auto", enabled: true });
       dirty(); renderRules();
     }
-    say("arunmsg", "Example loaded. Press Preview plan."); renderChips();
+    say("arunmsg", "Example loaded. Press Preview plan."); renderChips(); renderMirror();
   };
   document.getElementById("awfload").onclick = function () { document.getElementById("awffile").click(); };
   document.getElementById("awffile").onchange = function (e) {
@@ -1216,7 +1524,7 @@
     rd.onload = function () { awf.value = String(rd.result); renderChips(); say("arunmsg", f.name + " loaded."); };
     rd.readAsText(f);
   };
-  awf.addEventListener("input", function () { aplanned = false; renderChips(); });
+  awf.addEventListener("input", function () { aplanned = false; renderChips(); renderMirror(); });
 
   function nodeTag(n, main) { var t = el("span", "tag" + (main ? " main" : ""), n.cls); t.appendChild(el("small", null, "#" + n.id)); return t; }
   var STATE_TEXT = { queued: "Waiting", running: "Running", done: "Done", skipped: "Skipped", error: "Failed" };
@@ -1232,11 +1540,16 @@
       var run = js && js.state === "running";
       top.appendChild(el("span", "dot " + (js ? (js.state === "done" ? "ok" : js.state === "error" ? "bad" : run ? "run" : "") : (st.missing && st.missing.length ? "bad" : "ok"))));
       top.appendChild(el("span", "wname", st.machine === "controller" ? "Controller" : st.machine));
-      top.appendChild(el("span", "wstate", js ? (STATE_TEXT[js.state] + (js.msg && js.state !== "done" && js.msg.replace(/\u2026$/, "") !== STATE_TEXT[js.state] ? " \u00B7 " + js.msg : "")) : (st.runs ? "" : "Nothing to run")));
+      top.appendChild(el("span", "wstate", js ? (STATE_TEXT[js.state] + (js.msg && js.msg !== "Done" && js.msg.replace(/\u2026$/, "") !== STATE_TEXT[js.state] ? " \u00B7 " + js.msg.replace(/^Done \u00B7 /, "") : "")) : (st.runs ? "" : "Nothing to run")));
       card.appendChild(top);
-      var tags = el("div", "tags");
-      st.nodes.forEach(function (n) { tags.appendChild(nodeTag(n, true)); });
-      card.appendChild(tags);
+      if (st.mirror) {
+        card.appendChild(el("div", "sline", "Runs the whole workflow (" + st.nodes.length + " nodes)"));
+        (st.changes || []).forEach(function (c) { var l = el("div", "sline"); l.appendChild(el("b", null, "Changed: ")); l.appendChild(document.createTextNode(c)); card.appendChild(l); });
+      } else {
+        var tags = el("div", "tags");
+        st.nodes.forEach(function (n) { tags.appendChild(nodeTag(n, true)); });
+        card.appendChild(tags);
+      }
       st.inputs.forEach(function (d) {
         var l = el("div", "sline"); l.appendChild(document.createTextNode("Image for " + d.to_cls + " #" + d.to + " comes from "));
         l.appendChild(el("b", null, (d.machine === "controller" ? "Controller" : d.machine) + " (" + d.cls + " #" + d.node + ")"));
@@ -1267,7 +1580,12 @@
     document.getElementById("arunbtn").disabled = b;
     document.getElementById("arunbtn").textContent = b ? "Running\u2026" : "Run";
   }
-  function request_body() { return { workflow: awf.value, rules: arules }; }
+  function request_body() {
+    if (amode !== "mirror") return { workflow: awf.value, rules: arules, mode: "manual" };
+    return { workflow: awf.value, mode: "mirror", mirror: {
+      machines: chosenMachines(), randomize: document.getElementById("amseed").checked,
+      overrides: aover.filter(function (o) { return o.node && o.input; }).map(function (o) { return { machine: o.machine, node: o.node, input: o.input, value: o.value }; }) } };
+  }
 
   document.getElementById("aplanbtn").onclick = function () {
     if (!awf.value.trim()) { say("arunmsg", "Paste or load a workflow first.", "bad"); return; }

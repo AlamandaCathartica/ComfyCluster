@@ -6,20 +6,24 @@
 import argparse
 import hashlib
 import hmac
+import io
+import ipaddress
 import json
 import os
 import re
 import secrets
 import shutil
+import socket
 import sys
 import threading
 import time
 import webbrowser
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import unquote, urljoin, urlparse
 
 import requests
-from flask import Flask, Response, g, jsonify, request, send_from_directory
+from flask import Flask, Response, g, jsonify, request, send_file, send_from_directory
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -357,6 +361,279 @@ def upload_chunk():
 
 
 
+# ----------------------------------------------------------------------------- models and nodes from a link
+# The controller downloads the file itself (the browser only starts it and shows progress).
+LINKS = {}
+_PRIVATE_OK = os.environ.get("COMFYCLUSTER_ALLOW_PRIVATE_LINKS") == "1"      # for tests only
+_CD_NAME = re.compile(r"filename\*?=(?:UTF-8'')?\"?([^\";]+)", re.I)
+
+
+def _public_url(u):
+    """Refuse links that point into this machine or its network (a download link has no business there)."""
+    p = urlparse(u)
+    if p.scheme not in ("http", "https") or not p.hostname:
+        raise ValueError("Enter a link that starts with http:// or https://")
+    try:
+        infos = socket.getaddrinfo(p.hostname, p.port or (443 if p.scheme == "https" else 80), proto=socket.IPPROTO_TCP)
+    except OSError:
+        raise ValueError("Could not find that address.") from None
+    if not _PRIVATE_OK and any(not ipaddress.ip_address(i[4][0]).is_global for i in infos):
+        raise ValueError("That address is not on the public internet.")
+
+
+def _link_name(given, resp, url):
+    cands = [given]
+    m = _CD_NAME.search(resp.headers.get("Content-Disposition", ""))
+    if m:
+        cands.append(unquote(m.group(1).strip()))
+    cands.append(unquote(urlparse(url).path))
+    for c in cands:
+        n = _safe_name(c or "")
+        if n:
+            return n
+    return ""
+
+
+def _link_download(job, url, token):
+    part = os.path.join(STATE["stage_dir"], "link-" + job["id"] + ".part")
+    try:
+        job["state"] = "connecting"
+        host0, cur = urlparse(url).hostname, url
+        for _ in range(6):
+            _public_url(cur)
+            hdr = {"User-Agent": "ComfyCluster"}
+            if token and urlparse(cur).hostname == host0:         # the token never follows a redirect to another site
+                hdr["Authorization"] = "Bearer " + token
+            r = requests.get(cur, headers=hdr, stream=True, allow_redirects=False, timeout=(15, 60))
+            if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("Location"):
+                cur = urljoin(cur, r.headers["Location"])
+                r.close()
+                continue
+            break
+        else:
+            raise ValueError("Too many redirects.")
+        if r.status_code in (401, 403):
+            raise ValueError(f"The site refused the download ({r.status_code}). It may need an access token.")
+        if not r.ok:
+            raise ValueError(f"The site answered with error {r.status_code}.")
+        if "text/html" in r.headers.get("Content-Type", "").lower():
+            raise ValueError("This link opens a web page, not a file. Use the direct download link (on Hugging Face, the one under \u201cresolve\u201d).")
+        name = _link_name(job["name"], r, cur)
+        exts = MODEL_EXT if job["kind"] == "model" else (".zip",)
+        if not name or not name.lower().endswith(exts):
+            raise ValueError("Could not tell the file name or type. Type the file name (for example model.safetensors) and try again.")
+        job["name"] = name
+        dest_dir = os.path.join(STATE["comfy_dir"], "models", job["folder"]) if job["kind"] == "model" else os.path.join(STATE["comfy_dir"], "custom_nodes")
+        os.makedirs(dest_dir, exist_ok=True)
+        os.makedirs(STATE["stage_dir"], exist_ok=True)
+        job["total"] = int(r.headers.get("Content-Length") or 0)
+        if job["total"] and job["total"] + GIB > shutil.disk_usage(dest_dir).free:
+            raise ValueError("Not enough free disk space for this file.")
+        job["state"] = "downloading"
+        with open(part, "wb") as f:
+            for blk in r.iter_content(1 << 20):
+                if job["cancel"]:
+                    raise InterruptedError
+                f.write(blk)
+                job["done"] += len(blk)
+        if job["total"] and job["done"] != job["total"]:
+            raise ValueError("The download ended early. Try again.")
+        if job["kind"] == "node":
+            job["msg"] = "Installed as " + _install_node_zip(part, dest_dir, name[:-4])
+            os.remove(part)
+        else:
+            os.replace(part, os.path.join(dest_dir, name))
+            job["msg"] = "Saved in models/" + job["folder"]
+        job["state"] = "done"
+    except InterruptedError:
+        job.update(state="cancelled", msg="Cancelled")
+    except (ValueError, OSError, requests.RequestException, zipfile.BadZipFile) as e:
+        job.update(state="error", msg=str(e) if isinstance(e, ValueError) else f"Download failed: {e}"[:300])
+    finally:
+        if os.path.isfile(part):
+            try:
+                os.remove(part)
+            except OSError:
+                pass
+
+
+def _link_demo(job):
+    job.update(state="downloading", total=1_800_000_000)
+    while job["done"] < job["total"] and not job["cancel"]:
+        time.sleep(0.25)
+        job["done"] += 90_000_000
+    job.update(state="cancelled" if job["cancel"] else "done", msg="Cancelled" if job["cancel"] else "Demo: nothing was downloaded")
+
+
+@app.post("/api/upload/link")
+def upload_link():
+    if not STATE["comfy_dir"]:
+        return jsonify(error="downloads are not available here"), 503
+    b = request.get_json(silent=True) or {}
+    url, kind, folder = str(b.get("url", "")).strip(), b.get("kind", "model"), b.get("folder", "")
+    name, token = str(b.get("name", "")).strip(), str(b.get("token", "")).strip()
+    if not url or len(url) > 2000:
+        return jsonify(error="Paste a link first."), 400
+    if urlparse(url).scheme not in ("http", "https"):
+        return jsonify(error="The link must start with http:// or https://"), 400
+    if kind not in ("model", "node") or (kind == "model" and folder not in MODEL_FOLDERS):
+        return jsonify(error="Choose where to save it."), 400
+    if name and not _safe_name(name):
+        return jsonify(error="That file name has characters that are not allowed."), 400
+    job = dict(id=secrets.token_hex(5), url=url.split("?")[0][:200], kind=kind, folder=folder if kind == "model" else "",
+               name=name, state="starting", done=0, total=0, msg="", cancel=False, t0=time.time())
+    for old in sorted(LINKS.values(), key=lambda j: j["t0"])[:-19]:
+        LINKS.pop(old["id"], None)
+    LINKS[job["id"]] = job
+    target = (lambda: _link_demo(job)) if STATE["demo"] else (lambda: _link_download(job, url, token))
+    threading.Thread(target=target, daemon=True).start()
+    return jsonify(ok=True, job=job["id"])
+
+
+@app.get("/api/upload/link/<jid>")
+def upload_link_status(jid):
+    j = LINKS.get(jid)
+    return jsonify({k: v for k, v in j.items() if k != "cancel"}) if j else (jsonify(error="unknown download"), 404)
+
+
+@app.post("/api/upload/link/<jid>/cancel")
+def upload_link_cancel(jid):
+    j = LINKS.get(jid)
+    if not j:
+        return jsonify(error="unknown download"), 404
+    j["cancel"] = True
+    return jsonify(ok=True)
+
+
+# ----------------------------------------------------------------------------- files (download from the controller)
+FILE_ROOTS = {                       # id: (label, folder inside ComfyUI, newest first?)
+    "output": ("Outputs", "output", True), "input": ("Inputs", "input", True),
+    "workflows": ("Workflows", os.path.join("user", "default", "workflows"), True),
+    "models": ("Models", "models", False), "custom_nodes": ("Custom nodes", "custom_nodes", False),
+}
+MAX_ENTRIES = 1000
+MAX_ZIP_FILES = 20000
+SKIP_DIRS = {"__pycache__", ".git", ".ipynb_checkpoints"}
+
+
+class _Sink(io.RawIOBase):
+    """Collects what zipfile writes, so a zip can be sent while it is still being made."""
+    def __init__(self):
+        self.parts, self.pos = [], 0
+
+    def writable(self):
+        return True
+
+    def write(self, b):
+        self.parts.append(bytes(b))
+        self.pos += len(b)
+        return len(b)
+
+    def tell(self):
+        return self.pos
+
+    def drain(self):
+        out, self.parts = b"".join(self.parts), []
+        return out
+
+
+def _file_target(root, rel):
+    """(root folder, full path) for a root id and a relative path, or None when it would leave the root."""
+    if root not in FILE_ROOTS or not STATE["comfy_dir"]:
+        return None
+    base = os.path.realpath(os.path.join(STATE["comfy_dir"], FILE_ROOTS[root][1]))
+    parts = [p for p in (rel or "").replace("\\", "/").split("/") if p]
+    if any(p in (".", "..") or ":" in p for p in parts):
+        return None
+    full = os.path.realpath(os.path.join(base, *parts))
+    return (base, full) if full == base or full.startswith(base + os.sep) else None
+
+
+@app.get("/api/files/roots")
+def files_roots():
+    out = []
+    for rid, (label, sub, _) in FILE_ROOTS.items():
+        if STATE["comfy_dir"] and os.path.isdir(os.path.join(STATE["comfy_dir"], sub)):
+            out.append(dict(id=rid, label=label))
+    return jsonify(enabled=bool(STATE["comfy_dir"]), roots=out)
+
+
+@app.get("/api/files/list")
+def files_list():
+    root, rel = request.args.get("root", ""), request.args.get("path", "")
+    t = _file_target(root, rel)
+    if not t or not os.path.isdir(t[1]):
+        return jsonify(error="That folder is not available."), 404
+    items = []
+    try:
+        with os.scandir(t[1]) as it:
+            for e in it:
+                if e.name.startswith(".") or e.name in SKIP_DIRS:
+                    continue
+                try:
+                    st, isdir = e.stat(), e.is_dir()
+                except OSError:
+                    continue
+                items.append(dict(name=e.name, dir=isdir, size=0 if isdir else st.st_size, mtime=int(st.st_mtime)))
+    except OSError:
+        return jsonify(error="Could not read that folder."), 500
+    newest = FILE_ROOTS[root][2]
+    items.sort(key=lambda x: (not x["dir"], -x["mtime"] if newest else x["name"].lower()))
+    return jsonify(root=root, path="/".join(p for p in rel.replace("\\", "/").split("/") if p),
+                   entries=items[:MAX_ENTRIES], truncated=len(items) > MAX_ENTRIES)
+
+
+@app.get("/api/files/get")
+def files_get():
+    t = _file_target(request.args.get("root", ""), request.args.get("path", ""))
+    if not t or not os.path.isfile(t[1]) or os.path.basename(t[1]).startswith("."):
+        return jsonify(error="File not found."), 404
+    return send_file(t[1], as_attachment=True, download_name=os.path.basename(t[1]), conditional=True)
+
+
+@app.get("/api/files/zip")
+def files_zip():
+    root = request.args.get("root", "")
+    t = _file_target(root, request.args.get("path", ""))
+    if not t or not os.path.isdir(t[1]):
+        return jsonify(error="Folder not found."), 404
+    files, total = [], 0
+    for d, dirs, names in os.walk(t[1]):
+        dirs[:] = [x for x in dirs if not x.startswith(".") and x not in SKIP_DIRS]
+        for n in names:
+            full = os.path.join(d, n)
+            if n.startswith(".") or os.path.islink(full):
+                continue
+            try:
+                total += os.path.getsize(full)
+            except OSError:
+                continue
+            files.append((full, os.path.relpath(full, t[1]).replace(os.sep, "/")))
+            if len(files) > MAX_ZIP_FILES or total > MAX_UNZIPPED:
+                return jsonify(error="This folder is too big to zip. Open it and download files one at a time."), 413
+    if not files:
+        return jsonify(error="This folder is empty."), 404
+
+    def stream():
+        sink = _Sink()
+        with zipfile.ZipFile(sink, "w", zipfile.ZIP_STORED) as z:
+            for full, arc in files:
+                try:
+                    with open(full, "rb") as src, z.open(arc, "w", force_zip64=True) as dst:
+                        for blk in iter(lambda: src.read(1 << 20), b""):
+                            dst.write(blk)
+                            data = sink.drain()
+                            if data:
+                                yield data
+                except OSError:
+                    continue
+        yield sink.drain()
+    name = (os.path.basename(t[1].rstrip(os.sep)) or root) + ".zip"
+    resp = Response(stream(), mimetype="application/zip")
+    resp.headers["Content-Disposition"] = f'attachment; filename="{name}"'
+    return resp
+
+
 # ----------------------------------------------------------------------------- node assignment
 # Rules say which machine runs which node type. A workflow (API format) is split by them and run step by step.
 JOBS = {}
@@ -458,14 +735,26 @@ def _make_plan(body):
             raise pipeline.PlanError("The workflow is not valid JSON.") from None
     rules = _clean_rules(body.get("rules", STATE["rules"]))
     bases = _machine_bases()
+    mirror = body.get("mode") == "mirror"
+    mo = body.get("mirror") if isinstance(body.get("mirror"), dict) else {}
+    chosen = [m for m in (mo.get("machines") or []) if isinstance(m, str)]
+    for m in chosen:
+        if m not in bases:
+            raise pipeline.PlanError(f"{m} is not connected.")
+
+    def make(info):
+        if mirror:
+            return pipeline.build_mirror(wf, chosen, mo.get("overrides") if isinstance(mo.get("overrides"), list) else [],
+                                         info, bool(mo.get("randomize", True)))
+        return pipeline.build_plan(wf, rules, list(bases), info)
     if STATE["demo"]:
-        plan = pipeline.build_plan(wf, rules, list(bases), DEMO_INFO.get)
+        plan = make(DEMO_INFO.get)
         plan["warnings"] = []
         return plan, None
     if not STATE["comfy_ready"]:
         raise pipeline.PlanError("ComfyUI on the controller is not ready yet.")
     cluster = pipeline.Cluster(bases)
-    plan = pipeline.build_plan(wf, rules, list(bases), cluster.info_any)
+    plan = make(cluster.info_any)
     return cluster.missing(plan), cluster
 
 
@@ -745,6 +1034,13 @@ def main():
                  config_path=args.distributed_config, comfy_dir=comfy_dir, workers_file=args.workers_file or "",
                  logs={"engine": args.engine_log, "comfy": args.comfy_log},
                  stage_dir=os.path.join(args.cache_dir, "uploads"))
+    if args.demo:
+        wf_dir = os.path.join(comfy_dir, "user", "default", "workflows")
+        os.makedirs(wf_dir, exist_ok=True)
+        os.makedirs(os.path.join(comfy_dir, "output"), exist_ok=True)
+        if not os.listdir(wf_dir):
+            with open(os.path.join(wf_dir, "demo-workflow.json"), "w", encoding="utf-8") as f:
+                json.dump({"note": "Demo file"}, f)
     if args.workers_file and os.path.isfile(args.workers_file):
         with open(args.workers_file, encoding="utf-8") as f:
             STATE["workers"] = json.load(f)
