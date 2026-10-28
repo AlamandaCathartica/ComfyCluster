@@ -73,9 +73,24 @@ def after(resp):
 
 
 # ----------------------------------------------------------------------------- routes
+_INDEX = {"mtime": 0.0, "html": ""}
+
+
 @app.route("/")
 def index():
-    return send_from_directory(WEB, "index.html")
+    """The page, with the ComfyUI address already inside it: the frame can start loading as soon as the page
+    arrives, instead of after a second request, and the browser can open the connection to ComfyUI early."""
+    path = os.path.join(WEB, "index.html")
+    mtime = os.path.getmtime(path)
+    if _INDEX["mtime"] != mtime:
+        with open(path, encoding="utf-8") as f:
+            _INDEX.update(mtime=mtime, html=f.read())
+    url = STATE["comfy_url"] if re.fullmatch(r"https?://[\w.\-:]+/?", STATE["comfy_url"] or "") else ""
+    boot = ""
+    if url:
+        boot = (f'<link rel="preconnect" href="{url}" crossorigin>'
+                f'<script>window.BOOT={json.dumps({"url": url, "ready": bool(STATE["comfy_ready"])})};</script>')
+    return Response(_INDEX["html"].replace("<!--BOOT-->", boot, 1), mimetype="text/html")
 
 
 PUBLIC_KEYS = ("name", "enabled", "online", "gpu", "vram_used", "vram_total", "running", "pending",

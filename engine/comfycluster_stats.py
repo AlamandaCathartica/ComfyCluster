@@ -6,6 +6,7 @@ custom_nodes/ComfyCluster-Stats/ on every machine, and the controller GUI reads 
 """
 import asyncio
 import os
+import re
 import shutil
 import subprocess
 
@@ -22,6 +23,36 @@ except ImportError:      # run outside the custom_nodes package (tests)
 # custom_nodes/ComfyCluster-Stats/__init__.py -> ComfyUI/custom_nodes/ComfyCluster-Stats -> three levels up is the root
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
 LOGS = {"engine": os.path.join(_ROOT, "comfycluster_engine.log"), "comfy": os.path.join(_ROOT, "comfyui.log")}
+
+
+# ---- faster page loads --------------------------------------------------------------------------
+# ComfyUI sends "Cache-Control: no-cache" for every .js and .css file, so after each refresh the browser asks again
+# for every file of the interface (often hundreds), and each question travels through the tunnel. The files of the
+# interface have a hash in their name and never change, so they can be kept. Only static files are touched: never
+# /api, /view, /prompt or the websocket, and never the page itself.
+_HASHED = re.compile(r"[-.][A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$")
+KEEP_FOREVER = "public, max-age=31536000, immutable"
+
+
+def cache_policy(path):
+    """Cache-Control value for a static file path, or None to leave ComfyUI's own header alone."""
+    if path.startswith("/assets/"):
+        return KEEP_FOREVER if _HASHED.search(path) else "public, max-age=86400"
+    if path.startswith(("/extensions/", "/scripts/", "/lib/")):
+        return "public, max-age=300"      # custom node files can change when a node is updated, so only five minutes
+    return None
+
+
+async def _cache_mw(request, handler):
+    response = await handler(request)
+    try:
+        if request.method in ("GET", "HEAD") and response.status in (200, 304):
+            value = cache_policy(request.path)
+            if value:
+                response.headers["Cache-Control"] = value
+    except Exception:  # noqa: BLE001  (a header must never break a page)
+        pass
+    return response
 
 
 def _cpu_name():
@@ -76,6 +107,11 @@ try:
 
     if psutil:
         psutil.cpu_percent(interval=None)   # the first reading is always 0, so prime it
+
+    try:                                     # first in the list = outermost, so it runs after ComfyUI's own cache rule
+        PromptServer.instance.app.middlewares.insert(0, web.middleware(_cache_mw))
+    except Exception as _e:  # noqa: BLE001  (an older or newer ComfyUI: just keep its default)
+        print(f"[ComfyCluster] cache rule not installed: {_e}")
 
     @PromptServer.instance.routes.get("/comfycluster/stats")
     async def _stats(request):

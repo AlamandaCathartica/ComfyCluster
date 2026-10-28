@@ -53,6 +53,15 @@ The controller splits your workflow into steps, one slice per machine, and runs 
 - A setting can only change a value typed into a node, not an input wired to another node.
 - Results show in the Assign window, one image per machine. For results inside the ComfyUI frame, use the Distributed Seed and Distributed Collector nodes instead.
 
+## Why a refresh can be slow, and what is done about it
+
+ComfyUI sends `Cache-Control: no-cache` for every `.js` and `.css` file. After a refresh (Ctrl+R) the browser therefore asks again for every file of the interface, often hundreds, and each question goes through the Cloudflare tunnel. The ComfyCluster add-on (`engine/comfycluster_stats.py`, installed on every machine) now lets the browser keep the interface files that carry a hash in their name (`/assets/index-AbC123.js`), which never change. Files from custom nodes (`/extensions/`, `/scripts/`) are kept for five minutes. The API, `/view`, `/prompt`, the websocket and the page itself are untouched. The GUI page also starts loading the ComfyUI frame at once and opens the connection to ComfyUI early.
+
+- **The first visit of a session is not faster.** Each session gets a new tunnel address, so the browser starts with an empty cache. Refreshes within a session are what improve.
+- **To check it**, open the browser's developer tools, Network tab, and refresh. Interface files should show `(disk cache)` instead of `304`.
+- A custom node whose script changed inside the same five minutes may show the old script until you hard refresh (Ctrl+Shift+R).
+- Still outside this fix: what ComfyUI-Distributed and other custom nodes load on start, and `object_info`, which ComfyUI builds fresh on every load.
+
 ## Models
 
 `models.json` lists what every machine downloads. Edit it in your fork so the controller and workers always match. Gated models need a Colab secret named `HF_TOKEN`.
