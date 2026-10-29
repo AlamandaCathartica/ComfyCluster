@@ -1,5 +1,6 @@
-"""ComfyUI add-on (adds no nodes): serves GET /comfycluster/stats (CPU, RAM, disk, GPU load) and
-GET /comfycluster/log?file=engine|comfy (the end of this machine's two log files).
+"""ComfyUI add-on (adds no nodes): serves GET /comfycluster/stats (CPU, RAM, disk, GPU load),
+GET /comfycluster/log?file=engine|comfy (the end of this machine's two log files) and, on workers, the model sync
+endpoints GET /comfycluster/sync/inventory and POST /comfycluster/sync/chunk (the controller sends its models here).
 
 ComfyUI's own /system_stats has no CPU or GPU usage. engine/comfy.py copies this file into
 custom_nodes/ComfyCluster-Stats/ on every machine, and the controller GUI reads the endpoint.
@@ -17,12 +18,32 @@ except ImportError:  # ComfyUI installs psutil, this is only a safety net
 
 try:
     from .logtail import tail_log
+    from . import modelsync as ms
+    from .modelsync_worker import Receiver
 except ImportError:      # run outside the custom_nodes package (tests)
     from logtail import tail_log
+    import modelsync as ms
+    from modelsync_worker import Receiver
 
 # custom_nodes/ComfyCluster-Stats/__init__.py -> ComfyUI/custom_nodes/ComfyCluster-Stats -> three levels up is the root
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
 LOGS = {"engine": os.path.join(_ROOT, "comfycluster_engine.log"), "comfy": os.path.join(_ROOT, "comfyui.log")}
+SYNC_KEY = os.environ.get("COMFYCLUSTER_SYNC_KEY", "")      # set by engine/worker.py; the controller's machine has none
+
+
+def _models_dir():
+    try:
+        import folder_paths
+        return folder_paths.models_dir
+    except Exception:  # noqa: BLE001  (outside ComfyUI)
+        return os.path.join(_ROOT, "ComfyUI", "models")
+
+
+def _int(text):
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        return None
 
 
 # ---- faster page loads --------------------------------------------------------------------------
@@ -128,6 +149,32 @@ try:
         except ValueError:
             return web.json_response({"error": "bad number"}, status=400)
         return web.json_response(await asyncio.get_running_loop().run_in_executor(None, tail_log, path, n, since))
+
+    # ---- model sync (worker only): the controller pushes its models here, see engine/modelsync.py ----
+    if ms.KEY_RE.fullmatch(SYNC_KEY):
+        _rx = Receiver(_models_dir(), SYNC_KEY, log=print)
+        _rx.start()
+
+        @PromptServer.instance.routes.get("/comfycluster/sync/inventory")
+        async def _sync_inventory(request):
+            if not _rx.authed(request.headers.get(ms.KEY_HEADER)):
+                return web.json_response({"error": "bad key"}, status=401)
+            return web.json_response(await asyncio.get_running_loop().run_in_executor(None, _rx.inventory))
+
+        @PromptServer.instance.routes.post("/comfycluster/sync/chunk")
+        async def _sync_chunk(request):
+            if not _rx.authed(request.headers.get(ms.KEY_HEADER)):      # checked before the body is read
+                return web.json_response({"error": "bad key"}, status=401)
+            q = request.query
+            offset, total = _int(q.get("offset")), _int(q.get("total"))
+            if offset is None or total is None:
+                return web.json_response({"error": "bad offset or size"}, status=400)
+            data = await request.read()
+            status, body = await asyncio.get_running_loop().run_in_executor(
+                None, _rx.receive, q.get("path"), offset, total, q.get("sha256"), data)
+            return web.json_response(body, status=status)
+    elif SYNC_KEY:
+        print("[ComfyCluster] model sync is off: the sync key is not valid")
 except ImportError:                          # not running inside ComfyUI
     pass
 

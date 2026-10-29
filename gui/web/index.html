@@ -409,6 +409,16 @@
   }
   .padd textarea::placeholder{color:var(--on-surface-variant);opacity:.75;}
   .padd textarea:focus-visible{outline:2px solid var(--primary);outline-offset:2px;}
+  /* model sync: controller -> workers */
+  .syncbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;padding:0 32px 12px;}
+  .syncbar[hidden]{display:none;}
+  .synctxt{flex:1 1 220px;min-width:0;display:flex;flex-direction:column;gap:2px;font:400 13px/18px var(--font);letter-spacing:.2px;color:var(--on-surface-variant);}
+  .synctxt strong{font:500 14px/20px var(--font);color:var(--on-surface);}
+  .synctxt .bad{color:var(--bad);}
+  .wsync{padding-top:14px;box-shadow:0 -1px 0 var(--outline-variant);}
+  .wsoft.bad{color:var(--bad);}
+  .wsoft.warn{color:var(--warn);}
+  .wsoft.ok{color:var(--ok);}
   .pmsg{display:flex;flex-direction:column;gap:2px;padding:0 32px 12px;font:400 13px/18px var(--font);letter-spacing:.2px;}
   .pmsg:empty{display:none;}
   .pmsg .ok{color:var(--ok);}
@@ -416,6 +426,7 @@
   @media (max-width:600px){
     .padd{flex-direction:column;align-items:stretch;padding:2px 16px 10px;}
     .pmsg{padding:0 16px 10px;}
+    .syncbar{padding:0 16px 10px;}
   }
 
   @media (max-width:600px){
@@ -535,6 +546,11 @@
       <button class="btn go" id="paddbtn" type="button" disabled>Add worker</button>
     </div>
     <div class="pmsg" id="pmsg" role="status" aria-live="polite"></div>
+    <div class="syncbar" id="syncbar" hidden>
+      <div class="synctxt"><strong>Model sync</strong><span id="syncsub"></span></div>
+      <label class="acheck"><input type="checkbox" id="syncauto" checked /> Send automatically</label>
+      <button class="btn" id="syncnow" type="button">Sync now</button>
+    </div>
     <div class="win-body" id="wlist"></div>
     <div class="win-foot">
       <button class="btn" id="wdis" type="button">Disconnect all</button>
@@ -771,7 +787,7 @@
     wwin.hidden = !open;
     document.getElementById("wscrim").hidden = !open;
     wbtn.setAttribute("aria-expanded", String(open));
-    if (open) { renderWorkers(); pfit(); setUpOpen(false, true); setLogOpen(false, true); setAsgOpen(false, true); setFilesOpen(false, true); if (!workers.length) pcode.focus(); }
+    if (open) { renderWorkers(); loadSync().catch(function () {}); pfit(); setUpOpen(false, true); setLogOpen(false, true); setAsgOpen(false, true); setFilesOpen(false, true); if (!workers.length) pcode.focus(); }
     else { pmsg.textContent = ""; if (!quiet) wbtn.focus(); }
   }
   wbtn.onclick = function () { setOpen(wwin.hidden); };
@@ -808,6 +824,62 @@
     var d = el("div", "sec"); d.appendChild(el("h4", null, title));
     kids.forEach(function (k) { if (k) d.appendChild(k); }); return d;
   }
+
+  // ---- model sync: what the controller has, and how far each worker is -------
+  var syncData = { enabled: false }, syncbar = document.getElementById("syncbar"), syncsub = document.getElementById("syncsub"),
+      syncauto = document.getElementById("syncauto"), syncnow = document.getElementById("syncnow");
+
+  function syncBlock(w) {
+    var s = syncData.enabled && syncData.workers && syncData.workers[w.name];
+    if (!s || !w.enabled) return null;
+    var kids = [], count = s.models != null && s.state !== "nokey" ? (s.synced || 0) + " / " + s.models + " models" : "";
+    if (s.state === "syncing") {
+      var p = s.total ? s.done / s.total * 100 : 0;
+      kids.push(meter("Sending", count, p, true));
+      kids.push(el("div", "wsoft", s.file + " \u00B7 " + fmt(s.done || 0) + " of " + fmt(s.total || 0) + (s.queue > 1 ? " \u00B7 " + (s.queue - 1) + " more waiting" : "")));
+    } else if (s.state === "synced") {
+      kids.push(kv("Models", count));
+      kids.push(el("div", "wsoft ok", "Same as the controller."));
+    } else if (s.state === "waiting") {
+      kids.push(kv("Models", count));
+      kids.push(el("div", "wsoft", s.note || "Waiting for new files to finish writing."));
+    } else if (s.state === "error") {
+      kids.push(kv("Models", count));
+      kids.push(el("div", "wsoft bad", s.error || "Could not sync."));
+    } else if (s.state === "nokey") {
+      kids.push(el("div", "wsoft warn", s.note || "Run Worker.ipynb again and paste its new code to turn on model sync."));
+    } else {
+      kids.push(el("div", "wsoft", s.state === "checking" ? "Checking its models\u2026" : (s.note || "Waiting for the next check.")));
+    }
+    var d = section("Model sync", kids); d.className += " wsync"; return d;
+  }
+
+  function renderSync() {
+    syncbar.hidden = !syncData.enabled;
+    if (!syncData.enabled) return;
+    var c = syncData.controller || {}, parts = [];
+    parts.push((c.models || 0) + " model" + (c.models === 1 ? "" : "s") + " on the controller" + (c.bytes ? " (" + fmt(c.bytes) + ")" : ""));
+    if (c.state === "hashing") parts.push("reading files\u2026");
+    if (c.waiting) parts.push(c.waiting + " still being written");
+    syncsub.textContent = parts.join(" \u00B7 ") + ". Every connected worker gets them.";
+    if (c.skipped && c.skipped.length) syncsub.appendChild(el("span", "bad", " Not synced (name not allowed): " + c.skipped.join(", ")));
+    if (document.activeElement !== syncauto) syncauto.checked = !!syncData.auto;
+    syncnow.disabled = !workers.some(function (w) { return w.enabled && w.online; });
+  }
+  function loadSync() {
+    return fetch("api/sync", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
+      syncData = d || { enabled: false }; renderSync(); renderWorkers();
+    });
+  }
+  syncnow.onclick = function () {
+    syncnow.disabled = true;
+    fetch("api/sync/run", { method: "POST" }).catch(function () {}).then(function () { setTimeout(function () { loadSync().catch(function () {}); }, 600); });
+  };
+  syncauto.onchange = function () {
+    fetch("api/sync/auto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ on: syncauto.checked }) })
+      .catch(function () {}).then(function () { return loadSync(); }).catch(function () {});
+  };
+  (function syncLoop() { (wwin.hidden ? Promise.resolve() : loadSync()).catch(function () {}).then(function () { setTimeout(syncLoop, 2000); }); })();
 
   function renderWorkers() {
     var on = workers.filter(function (w) { return w.enabled && w.online; }).length;
@@ -865,7 +937,9 @@
         el("div", "wsoft", [w.comfy_version && "ComfyUI " + w.comfy_version, w.torch_version && "PyTorch " + w.torch_version,
                             w.python_version && "Python " + w.python_version].filter(Boolean).join(" \u00B7 "))
       ]));
-      row.appendChild(g); wlist.appendChild(row);
+      row.appendChild(g);
+      var sb = syncBlock(w); if (sb) row.appendChild(sb);
+      wlist.appendChild(row);
     });
     document.getElementById("wdis").disabled = !workers.some(function (w) { return w.enabled; });
     document.getElementById("wcon").disabled = !workers.some(function (w) { return !w.enabled; });
