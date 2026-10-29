@@ -32,6 +32,7 @@ from logtail import tail_log  # noqa: E402
 from pairing import PREFIX, parse_code  # noqa: E402
 from comfy import worker_entry  # noqa: E402
 import pipeline  # noqa: E402
+import modelpush  # noqa: E402
 WEB = os.path.join(HERE, "web")
 GIB = 1024 ** 3
 ACCESS_KEY = os.environ.get("COMFYCLUSTER_KEY", "")
@@ -42,7 +43,7 @@ except OSError:
 
 STATE = {"demo": False, "comfy_url": "", "comfy_local": "", "comfy_ready": False,
          "workers": [], "workers_file": "", "config_path": "", "comfy_dir": "", "stage_dir": "", "logs": {},
-         "assign_file": "", "rules": []}
+         "assign_file": "", "rules": [], "sync": None}
 _LOCK = threading.Lock()
 _CFG_LOCK = threading.Lock()
 WAKE = threading.Event()          # set to refresh the worker status right away
@@ -152,10 +153,11 @@ def add_workers():
                 continue
             if same_name:
                 same_name["url"] = w["url"]
+                same_name["key"] = w.get("key", "")             # a restarted worker has a new key (or none: an old worker)
                 same_name.update(probe)
                 entry, status, text = same_name, "updated", f"Updated {name} with its new address."
             else:
-                entry = dict(name=name, url=w["url"], enabled=True)
+                entry = dict(name=name, url=w["url"], key=w.get("key", ""), enabled=True)
                 entry.update(probe)
                 STATE["workers"].append(entry)
                 status, text = "added", f"Added {name}."
@@ -166,6 +168,7 @@ def add_workers():
         _save_workers_file()
         _register_workers(changed)
         WAKE.set()
+        _sync_wake()
     return jsonify(ok=any(r["ok"] for r in results), results=results)
 
 
@@ -181,6 +184,8 @@ def delete_worker(name):
         STATE["workers"].remove(w)
     _save_workers_file()
     _unregister_worker(name)
+    if STATE["sync"]:
+        STATE["sync"].forget(name)
     WAKE.set()
     return jsonify(ok=True, name=name)
 
@@ -368,6 +373,8 @@ def upload_chunk():
             else:
                 os.replace(part, os.path.join(dest_dir, name))
                 msg = "Uploaded" if kind == "model" else "Installed"
+                if kind == "model":
+                    _sync_wake()
         except (OSError, ValueError, zipfile.BadZipFile) as e:
             if os.path.isfile(part):
                 os.remove(part)
@@ -459,6 +466,7 @@ def _link_download(job, url, token):
         else:
             os.replace(part, os.path.join(dest_dir, name))
             job["msg"] = "Saved in models/" + job["folder"]
+            _sync_wake()
         job["state"] = "done"
     except InterruptedError:
         job.update(state="cancelled", msg="Cancelled")
@@ -518,6 +526,69 @@ def upload_link_cancel(jid):
         return jsonify(error="unknown download"), 404
     j["cancel"] = True
     return jsonify(ok=True)
+
+
+# ----------------------------------------------------------------------------- model sync (controller -> every worker)
+# A model enters the cluster here, on the controller (upload, link, models.json). modelpush.SyncManager then sends
+# every model the controller has to every connected worker. Workers never download and never talk to each other.
+def _engine_log(msg):
+    """Model sync messages go to the engine log, so they show in the Log window next to what the notebook does."""
+    line = f"[{time.strftime('%H:%M:%S')}] {msg}"
+    print(line, flush=True)
+    path = STATE["logs"].get("engine", "")
+    if path:
+        try:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except OSError:
+            pass
+
+
+def _sync_workers():
+    """What the sync needs to know about each worker. The key stays on the server: it never goes to the browser."""
+    with _LOCK:
+        return [dict(name=w["name"], url=w["url"], key=w.get("key", ""), online=bool(w.get("online")),
+                     enabled=w.get("enabled", True)) for w in STATE["workers"]]
+
+
+def _sync_wake():
+    if STATE["sync"]:
+        STATE["sync"].wake()
+
+
+_DEMO_SYNC = {"auto": True, "enabled": True, "controller": {"state": "idle", "models": 4, "bytes": 14_200_000_000, "skipped": [], "waiting": 0},
+              "workers": {"worker1": dict(state="synced", models=4, synced=4, queue=0, file="", done=0, total=0, error="", note=""),
+                          "worker2": dict(state="syncing", models=4, synced=2, queue=2, file="checkpoints/sdxl/base.safetensors",
+                                          done=2_300_000_000, total=6_900_000_000, error="", note=""),
+                          "worker3": dict(state="error", models=4, synced=3, queue=1, file="", done=0, total=0,
+                                          error="loras/detail.safetensors: not enough free disk space on the worker", note="")}}
+
+
+@app.get("/api/sync")
+def sync_status():
+    if STATE["demo"]:
+        return jsonify(_DEMO_SYNC)
+    if not STATE["sync"]:
+        return jsonify(enabled=False)
+    return jsonify(enabled=True, **STATE["sync"].snapshot())
+
+
+@app.post("/api/sync/run")
+def sync_run():
+    """Look at every worker now instead of at the next scheduled pass."""
+    if not STATE["sync"]:
+        return jsonify(error="Model sync is not available here."), 503
+    STATE["sync"].run_now()
+    return jsonify(ok=True)
+
+
+@app.post("/api/sync/auto")
+def sync_auto():
+    """Turn the automatic pass on or off. Off: models are only sent when Sync now is pressed."""
+    if not STATE["sync"]:
+        return jsonify(error="Model sync is not available here."), 503
+    STATE["sync"].set_auto(bool((request.get_json(silent=True) or {}).get("on")))
+    return jsonify(ok=True, auto=STATE["sync"].auto)
 
 
 # ----------------------------------------------------------------------------- files (download from the controller)
@@ -924,7 +995,7 @@ def _save_workers_file():
     if not path:
         return
     with _LOCK:
-        data = [{"name": w["name"], "url": w["url"]} for w in STATE["workers"]]
+        data = [{"name": w["name"], "url": w["url"], "key": w.get("key", "")} for w in STATE["workers"]]
     try:
         tmp = path + ".part"
         with open(tmp, "w", encoding="utf-8") as f:
@@ -1068,6 +1139,10 @@ def main():
                                        "comfycluster_assign.json")
     _load_rules()
     threading.Thread(target=poller, daemon=True).start()
+    if comfy_dir and not args.demo:
+        STATE["sync"] = modelpush.SyncManager(os.path.join(comfy_dir, "models"), os.path.join(args.cache_dir, "model-hashes.json"),
+                                              _sync_workers, log=_engine_log)
+        STATE["sync"].start()
 
     if args.tunnel:
         sys.path.insert(0, HERE)

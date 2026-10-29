@@ -55,7 +55,8 @@ def install(root, log=print):
     os.makedirs(stats, exist_ok=True)
     here = os.path.dirname(os.path.abspath(__file__))
     shutil.copyfile(os.path.join(here, "comfycluster_stats.py"), os.path.join(stats, "__init__.py"))
-    shutil.copyfile(os.path.join(here, "logtail.py"), os.path.join(stats, "logtail.py"))
+    for name in ("logtail.py", "modelsync.py", "modelsync_worker.py"):       # model sync: the worker side of CMS1
+        shutil.copyfile(os.path.join(here, name), os.path.join(stats, name))
     return comfy
 
 
@@ -115,12 +116,14 @@ def write_worker_config(comfy_dir, workers, log=print):
     log(f"Registered {len(workers)} worker(s) in {path}")
 
 
-def launch(comfy_dir, port, log_path):
+def launch(comfy_dir, port, log_path, env=None):
+    """Start ComfyUI. `env` entries are added to the environment (the worker passes its model sync key this way)."""
     log = open(log_path, "a")
     return subprocess.Popen(
         [sys.executable, "main.py", "--listen", "0.0.0.0", "--port", str(port),
          "--enable-cors-header", "*", "--disable-auto-launch"],
-        cwd=comfy_dir, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        cwd=comfy_dir, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+        env=dict(os.environ, **env) if env else None)
 
 
 def probe(base_url, timeout=5):
